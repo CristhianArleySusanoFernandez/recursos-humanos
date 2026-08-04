@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+{% block title %}Gestión de Grupos – DST RRHH{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-section">
+  <h1 class="page-title h3 mb-0">📁 Grupos</h1>
+  <button type="button" class="btn btn-dst-primary btn-sm"
+          data-bs-toggle="modal" data-bs-target="#modalNewRoot">
+    + Nuevo grupo raíz
+  </button>
+</div>
+
+{% if not groups %}
+<div class="alert alert-info">
+  No hay grupos creados. Crea el primer grupo raíz con el botón de arriba.
+</div>
+{% else %}
+
+{% for root in groups %}
+<div class="card mb-section">
+
+  {# ── Header del grupo raíz ───────────────────────────────── #}
+  <div class="card-header card-header-primary d-flex align-items-center gap-2">
+    <button type="button"
+            class="btn btn-link p-0 text-white text-decoration-none fw-bold flex-grow-1 text-start"
+            data-bs-toggle="collapse"
+            data-bs-target="#collapseGroup-{{ loop.index }}"
+            aria-expanded="true"
+            aria-controls="collapseGroup-{{ loop.index }}">
+      {{ root.name }}
+    </button>
+    <div class="d-flex gap-1 flex-shrink-0">
+      <button type="button"
+              class="btn btn-sm"
+              style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.35);"
+              data-bs-toggle="modal"
+              data-bs-target="#modalEditGroup"
+              data-group-id="{{ root.id }}"
+              data-group-name="{{ root.name }}">
+        Editar
+      </button>
+      <form method="POST" action="/groups/{{ root.id }}/delete"
+            onsubmit="return confirm('¿Eliminar el grupo {{ root.name }}?')">
+        <button type="submit"
+                class="btn btn-sm"
+                style="background:var(--color-accent-dark);color:#fff;border:none;">
+          Eliminar
+        </button>
+      </form>
+      <button type="button"
+              class="btn btn-sm"
+              style="background:var(--color-primary-light);color:#fff;border:none;"
+              data-bs-toggle="modal"
+              data-bs-target="#modalNewChild"
+              data-parent-id="{{ root.id }}"
+              data-parent-name="{{ root.name }}">
+        + Subgrupo
+      </button>
+    </div>
+  </div>
+
+  {# ── Cuerpo: subgrupos como pills ────────────────────────── #}
+  <div class="collapse show" id="collapseGroup-{{ loop.index }}">
+    <div class="card-body">
+      {% if root.children %}
+      <div class="d-flex flex-wrap gap-2 mb-2">
+        {% for child in root.children %}
+        <span class="badge rounded-pill d-inline-flex align-items-center gap-2 px-3 py-2"
+              style="background-color:#e8f4fb;color:var(--color-primary);font-size:.85rem;font-weight:600;">
+          {{ child.name }}
+          <span class="d-inline-flex gap-1">
+            <button type="button"
+                    class="btn btn-link p-0"
+                    style="font-size:.75rem;color:var(--color-primary);text-decoration:none;line-height:1;"
+                    data-bs-toggle="modal"
+                    data-bs-target="#modalEditGroup"
+                    data-group-id="{{ child.id }}"
+                    data-group-name="{{ child.name }}">
+              ✎
+            </button>
+            <form method="POST" action="/groups/{{ child.id }}/delete"
+                  onsubmit="return confirm('¿Eliminar el subgrupo {{ child.name }}?')"
+                  class="d-inline">
+              <button type="submit"
+                      class="btn btn-link p-0"
+                      style="font-size:.75rem;color:var(--color-accent-dark);text-decoration:none;line-height:1;">
+                ✕
+              </button>
+            </form>
+          </span>
+        </span>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="fst-italic mb-0"
+         style="font-size:.85rem;color:var(--color-text-muted);">
+        Sin subgrupos. Usa "+ Subgrupo" para agregar.
+      </p>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+{% endfor %}
+
+{% endif %}
+
+{# ── Modal: Nuevo grupo raíz ─────────────────────────────────────── #}
+<div class="modal fade" id="modalNewRoot" tabindex="-1"
+     aria-labelledby="labelNewRoot" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content" style="border-radius:8px;">
+      <form method="POST" action="/groups">
+        <input type="hidden" name="parent_id" value="" />
+        <div class="modal-header"
+             style="background:var(--color-primary);color:#fff;border-radius:8px 8px 0 0;">
+          <h5 class="modal-title fw-bold" id="labelNewRoot">Nuevo grupo raíz</h5>
+          <button type="button" class="btn-close btn-close-white"
+                  data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <label class="form-label fw-semibold">Nombre del grupo</label>
+          <input type="text" name="name" class="form-control"
+                 placeholder="ej: Bogotá" required autofocus />
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-dst-secondary"
+                  data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-dst-primary">Crear</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{# ── Modal: Nuevo subgrupo ───────────────────────────────────────── #}
+<div class="modal fade" id="modalNewChild" tabindex="-1"
+     aria-labelledby="labelNewChild" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content" style="border-radius:8px;">
+      <form method="POST" action="/groups">
+        <input type="hidden" name="parent_id" id="childParentId" value="" />
+        <div class="modal-header"
+             style="background:var(--color-primary);color:#fff;border-radius:8px 8px 0 0;">
+          <h5 class="modal-title fw-bold" id="labelNewChild">
+            Nuevo subgrupo en <span id="childParentName"></span>
+          </h5>
+          <button type="button" class="btn-close btn-close-white"
+                  data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <label class="form-label fw-semibold">Nombre del subgrupo</label>
+          <input type="text" name="name" class="form-control"
+                 placeholder="ej: Asesores" required />
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-dst-secondary"
+                  data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-dst-primary">Crear</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{# ── Modal: Editar grupo ─────────────────────────────────────────── #}
+<div class="modal fade" id="modalEditGroup" tabindex="-1"
+     aria-labelledby="labelEditGroup" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content" style="border-radius:8px;">
+      <form id="editGroupForm" method="POST" action="">
+        <div class="modal-header"
+             style="background:var(--color-primary);color:#fff;border-radius:8px 8px 0 0;">
+          <h5 class="modal-title fw-bold" id="labelEditGroup">Editar grupo</h5>
+          <button type="button" class="btn-close btn-close-white"
+                  data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <label class="form-label fw-semibold">Nombre</label>
+          <input type="text" name="name" id="editGroupName"
+                 class="form-control" required />
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-dst-secondary"
+                  data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-dst-primary">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+document.getElementById('modalNewChild')
+  .addEventListener('show.bs.modal', function (event) {
+    var btn = event.relatedTarget;
+    document.getElementById('childParentId').value   = btn.dataset.parentId;
+    document.getElementById('childParentName').textContent = btn.dataset.parentName;
+  });
+
+document.getElementById('modalEditGroup')
+  .addEventListener('show.bs.modal', function (event) {
+    var btn = event.relatedTarget;
+    document.getElementById('editGroupForm').action =
+      '/groups/' + btn.dataset.groupId + '/edit';
+    document.getElementById('editGroupName').value = btn.dataset.groupName;
+  });
+</script>
+{% endblock %}

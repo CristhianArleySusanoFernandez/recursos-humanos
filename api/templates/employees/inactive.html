@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}Empleados inactivos – DST RRHH{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-section">
+  <h1 class="page-title h3 mb-0">Empleados inactivos</h1>
+  <a href="/" class="btn btn-dst-secondary btn-sm">← Empleados activos</a>
+</div>
+
+{% if not groups %}
+<div class="alert alert-info">No hay grupos configurados.</div>
+{% else %}
+
+{% for root in groups %}
+{% set root_employees_count = namespace(n=0) %}
+{% for child in root.children %}
+  {% set count = employees | selectattr("group_id", "equalto", child.id) | list | length %}
+  {% set root_employees_count.n = root_employees_count.n + count %}
+{% endfor %}
+
+<div class="card mb-section">
+  <div class="card-header card-header-primary d-flex align-items-center gap-2">
+    <button type="button"
+            class="btn btn-link p-0 text-white text-decoration-none fw-bold flex-grow-1 text-start"
+            data-bs-toggle="collapse"
+            data-bs-target="#collapseInactive-{{ loop.index }}"
+            aria-expanded="false"
+            aria-controls="collapseInactive-{{ loop.index }}">
+      {{ root.name }}
+    </button>
+    <span class="badge rounded-pill"
+          style="background-color:var(--color-primary-light);font-size:.75rem;">
+      {{ root_employees_count.n }} inactivos
+    </span>
+  </div>
+
+  <div class="collapse" id="collapseInactive-{{ loop.index }}">
+    {% if root.children %}
+      {% for child in root.children %}
+      {% set child_employees = employees | selectattr("group_id", "equalto", child.id) | list %}
+      <div class="subgroup-header">{{ child.name }}</div>
+      {% if child_employees %}
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="thead-inner">
+            <tr>
+              <th class="ps-3">Nombre</th>
+              <th>Cargo</th>
+              <th style="min-width:160px;">Documentos</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for emp in child_employees %}
+            <tr>
+              <td class="fw-semibold ps-3">{{ emp.name }}</td>
+              <td style="color:var(--color-text-muted);font-size:.9rem;">{{ emp.position }}</td>
+              <td>
+                {% set doc_count = emp.documents | length %}
+                <div class="d-flex align-items-center gap-2">
+                  <div class="progress flex-grow-1" style="height:12px;">
+                    <div class="progress-bar bar-warning"
+                         style="width:{{ [((doc_count / 25) * 100) | int, 100] | min }}%"
+                         role="progressbar"></div>
+                  </div>
+                  <span style="font-size:.8rem;color:var(--color-text-muted);">
+                    {{ doc_count }} docs
+                  </span>
+                </div>
+              </td>
+              <td>
+                <div class="d-flex gap-1">
+                  <a href="/{{ emp.id }}" class="btn btn-dst-secondary btn-sm">
+                    Ver detalle
+                  </a>
+                  <form method="POST" action="/{{ emp.id }}/delete"
+                        onsubmit="return confirm('¿Eliminar permanentemente a {{ emp.name }}? Esta acción no se puede deshacer.')">
+                    <button type="submit" class="btn btn-dst-danger btn-sm">
+                      Eliminar
+                    </button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="fst-italic px-3 py-2 mb-0"
+         style="font-size:.85rem;color:var(--color-text-muted);">
+        Sin empleados inactivos.
+      </p>
+      {% endif %}
+      {% endfor %}
+    {% else %}
+    <p class="fst-italic px-3 py-3 mb-0"
+       style="font-size:.85rem;color:var(--color-text-muted);">
+      Este grupo no tiene subgrupos.
+    </p>
+    {% endif %}
+  </div>
+</div>
+{% endfor %}
+
+{% endif %}
+{% endblock %}

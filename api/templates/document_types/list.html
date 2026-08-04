@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+{% block title %}Tipos de Documento – DST RRHH{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-section">
+  <h1 class="page-title h3 mb-0">Tipos de Documento</h1>
+  <button type="button" class="btn btn-dst-primary btn-sm"
+          data-bs-toggle="modal" data-bs-target="#modalNewType">
+    + Nuevo tipo
+  </button>
+</div>
+
+{% set ingreso_types = document_types | selectattr("category", "equalto", "INGRESO") | list %}
+{% set retiro_types  = document_types | selectattr("category", "equalto", "RETIRO")  | list %}
+
+{# ── Tabla INGRESO ───────────────────────────────────────────────── #}
+<div class="card mb-section">
+  <div class="card-header card-header-primary d-flex align-items-center gap-2">
+    <span class="flex-grow-1">Documentos de Ingreso</span>
+    <span class="badge rounded-pill"
+          style="background-color:var(--color-primary-light);">
+      {{ ingreso_types | length }}
+    </span>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="thead-dst">
+          <tr>
+            <th class="ps-3" style="width:60px;">Orden</th>
+            <th>Nombre</th>
+            <th>Código</th>
+            <th>Estado</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for dt in ingreso_types %}
+          <tr class="{{ '' if dt.is_active else 'table-secondary' }}">
+            <td class="text-center ps-3">{{ dt.order_index }}</td>
+            <td class="fw-semibold">{{ dt.name }}</td>
+            <td><code style="color:var(--color-primary);">{{ dt.code }}</code></td>
+            <td>
+              {% if dt.is_active %}
+              <span class="badge" style="background-color:#27ae60;color:#fff;">Activo</span>
+              {% else %}
+              <span class="badge bg-secondary">Inactivo</span>
+              {% endif %}
+            </td>
+            <td>
+              <button type="button" class="btn btn-dst-secondary btn-sm"
+                      data-bs-toggle="modal"
+                      data-bs-target="#modalEditType"
+                      data-dt-id="{{ dt.id }}"
+                      data-dt-name="{{ dt.name }}"
+                      data-dt-order="{{ dt.order_index }}"
+                      data-dt-active="{{ '1' if dt.is_active else '0' }}">
+                Editar
+              </button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{# ── Tabla RETIRO ────────────────────────────────────────────────── #}
+<div class="card mb-section">
+  <div class="card-header card-header-accent d-flex align-items-center gap-2">
+    <span class="flex-grow-1">Documentos de Retiro</span>
+    <span class="badge rounded-pill"
+          style="background-color:rgba(255,255,255,.25);">
+      {{ retiro_types | length }}
+    </span>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="thead-dst">
+          <tr>
+            <th class="ps-3" style="width:60px;">Orden</th>
+            <th>Nombre</th>
+            <th>Código</th>
+            <th>Estado</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for dt in retiro_types %}
+          <tr class="{{ '' if dt.is_active else 'table-secondary' }}">
+            <td class="text-center ps-3">{{ dt.order_index }}</td>
+            <td class="fw-semibold">{{ dt.name }}</td>
+            <td><code style="color:var(--color-primary);">{{ dt.code }}</code></td>
+            <td>
+              {% if dt.is_active %}
+              <span class="badge" style="background-color:#27ae60;color:#fff;">Activo</span>
+              {% else %}
+              <span class="badge bg-secondary">Inactivo</span>
+              {% endif %}
+            </td>
+            <td>
+              <button type="button" class="btn btn-dst-secondary btn-sm"
+                      data-bs-toggle="modal"
+                      data-bs-target="#modalEditType"
+                      data-dt-id="{{ dt.id }}"
+                      data-dt-name="{{ dt.name }}"
+                      data-dt-order="{{ dt.order_index }}"
+                      data-dt-active="{{ '1' if dt.is_active else '0' }}">
+                Editar
+              </button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{# ── Modal: Nuevo tipo ───────────────────────────────────────────── #}
+<div class="modal fade" id="modalNewType" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content" style="border-radius:8px;">
+      <form method="POST" action="/document-types">
+        <div class="modal-header"
+             style="background:var(--color-primary);color:#fff;border-radius:8px 8px 0 0;">
+          <h5 class="modal-title fw-bold">Nuevo tipo de documento</h5>
+          <button type="button" class="btn-close btn-close-white"
+                  data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Nombre</label>
+            <input type="text" name="name" class="form-control"
+                   placeholder="ej: Carta de Referencia" required />
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Código</label>
+            <input type="text" name="code" class="form-control"
+                   placeholder="ej: CARTA_REFERENCIA"
+                   pattern="[A-Z0-9_]+" title="Solo letras mayúsculas, números y _"
+                   required />
+            <div class="form-text">Solo letras mayúsculas, números y guión bajo.</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Categoría</label>
+            <select name="category" class="form-select" required>
+              <option value="INGRESO">Ingreso</option>
+              <option value="RETIRO">Retiro</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Orden</label>
+            <input type="number" name="order_index" class="form-control"
+                   value="99" min="1" required />
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-dst-secondary"
+                  data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-dst-primary">Crear</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{# ── Modal: Editar tipo ──────────────────────────────────────────── #}
+<div class="modal fade" id="modalEditType" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content" style="border-radius:8px;">
+      <form method="POST" id="editTypeForm" action="">
+        <div class="modal-header"
+             style="background:var(--color-primary);color:#fff;border-radius:8px 8px 0 0;">
+          <h5 class="modal-title fw-bold">Editar tipo de documento</h5>
+          <button type="button" class="btn-close btn-close-white"
+                  data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Nombre</label>
+            <input type="text" name="name" id="editTypeName"
+                   class="form-control" required />
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Orden</label>
+            <input type="number" name="order_index" id="editTypeOrder"
+                   class="form-control" min="1" required />
+          </div>
+          <div class="mb-3">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox"
+                     name="is_active" id="editTypeActive" value="1" />
+              <label class="form-check-label fw-semibold" for="editTypeActive">
+                Activo
+              </label>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-dst-secondary"
+                  data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-dst-primary">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+document.getElementById('modalEditType').addEventListener('show.bs.modal', function(e) {
+  var btn = e.relatedTarget;
+  document.getElementById('editTypeForm').action =
+    '/document-types/' + btn.dataset.dtId + '/edit';
+  document.getElementById('editTypeName').value  = btn.dataset.dtName;
+  document.getElementById('editTypeOrder').value = btn.dataset.dtOrder;
+  document.getElementById('editTypeActive').checked = btn.dataset.dtActive === '1';
+});
+</script>
+{% endblock %}

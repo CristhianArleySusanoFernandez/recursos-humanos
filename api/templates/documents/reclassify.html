@@ -1,0 +1,287 @@
+{% extends "base.html" %}
+{% block title %}Recategorizar documentos · DST RRHH{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+  <h1 class="page-title h3 mb-0">Recategorizar documentos</h1>
+  <a href="/" class="btn btn-dst-secondary btn-sm">← Volver al panel</a>
+</div>
+
+{# ── Filtros ──────────────────────────────────────────────────────────── #}
+<div class="card mb-3">
+  <div class="card-body">
+    <div class="row g-3 align-items-end">
+      <div class="col-md-5">
+        <label class="form-label fw-semibold d-block">Mostrar</label>
+        <div class="btn-group" role="group" aria-label="Filtro de categoría">
+          <input type="radio" class="btn-check" name="filterScope" id="scopeAll"
+                 value="all" {% if not only_extra %}checked{% endif %}>
+          <label class="btn btn-outline-primary btn-sm" for="scopeAll">Todos</label>
+
+          <input type="radio" class="btn-check" name="filterScope" id="scopeExtra"
+                 value="extra" {% if only_extra %}checked{% endif %}>
+          <label class="btn btn-outline-primary btn-sm" for="scopeExtra">Solo EXTRA</label>
+        </div>
+      </div>
+      <div class="col-md-5">
+        <label for="filterZona" class="form-label fw-semibold">Zona</label>
+        <select id="filterZona" class="form-select">
+          <option value="">Todas</option>
+          {% for z in zonas %}
+          <option value="{{ z.id }}" {% if selected_group_id == z.id|string %}selected{% endif %}>
+            {{ z.name }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2 text-md-end">
+        <span class="badge bg-secondary fs-6" id="pendingCounter">0 pendientes</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Panel de revisión ────────────────────────────────────────────────── #}
+<div id="reviewPanel" class="card d-none">
+  <div class="card-body">
+    <div class="row g-4">
+      {# Vista previa #}
+      <div class="col-lg-7">
+        <div class="ratio ratio-4x3 border rounded" style="min-height:480px;">
+          <iframe id="previewFrame" src="" title="Vista previa del documento"
+                  allow="autoplay" style="border:0;"></iframe>
+        </div>
+        <div class="form-text mt-1">
+          <a id="openInDrive" href="#" target="_blank" rel="noopener">Abrir en Google Drive ↗</a>
+        </div>
+      </div>
+
+      {# Datos + acciones #}
+      <div class="col-lg-5">
+        <dl class="row mb-3">
+          <dt class="col-4 text-muted">Empleado</dt>
+          <dd class="col-8 fw-semibold" id="infoEmployee">—</dd>
+          <dt class="col-4 text-muted">Grupo</dt>
+          <dd class="col-8" id="infoGroup">—</dd>
+          <dt class="col-4 text-muted">Archivo</dt>
+          <dd class="col-8" id="infoFile" style="word-break:break-all;">—</dd>
+          <dt class="col-4 text-muted">Tipo actual</dt>
+          <dd class="col-8"><span class="badge bg-info text-dark" id="infoCurrentType">—</span></dd>
+        </dl>
+
+        <label for="typeSelect" class="form-label fw-semibold">Reasignar a</label>
+        <select id="typeSelect" class="form-select mb-3">
+          {% for category, types in document_types|selectattr("is_active")|groupby("category") %}
+          <optgroup label="{{ category }}">
+            {% for dt in types %}
+            <option value="{{ dt.id }}">{{ dt.name }}</option>
+            {% endfor %}
+          </optgroup>
+          {% endfor %}
+        </select>
+
+        <div class="d-grid gap-2">
+          <button type="button" class="btn btn-dst-primary" id="btnSaveNext">
+            Guardar y siguiente
+          </button>
+          <div class="d-flex gap-2">
+            <button type="button" class="btn btn-dst-secondary flex-fill" id="btnSkip">
+              Omitir
+            </button>
+            <button type="button" class="btn btn-dst-danger flex-fill" id="btnDelete">
+              Eliminar documento
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Estado vacío ─────────────────────────────────────────────────────── #}
+<div id="emptyState" class="card d-none">
+  <div class="card-body text-center py-5">
+    <p class="fs-5 mb-3">✓ No hay más documentos para revisar.</p>
+    <a href="/" class="btn btn-dst-primary">Volver al panel principal</a>
+  </div>
+</div>
+
+{# ── Modal de conflicto ───────────────────────────────────────────────── #}
+<div class="modal fade" id="conflictModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Ya existe un documento de ese tipo</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-0" id="conflictText">—</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-dst-secondary" id="btnConflictCancel">Cancelar</button>
+        <button type="button" class="btn btn-dst-danger" id="btnConflictReplace">Reemplazar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# Cola inicial embebida (calculada en el servidor según los filtros). #}
+<script id="reviewData" type="application/json">{{ items|tojson }}</script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  var queue = JSON.parse(document.getElementById('reviewData').textContent || '[]');
+  var index = 0;
+
+  var panel      = document.getElementById('reviewPanel');
+  var emptyState = document.getElementById('emptyState');
+  var counter    = document.getElementById('pendingCounter');
+  var frame      = document.getElementById('previewFrame');
+  var openLink   = document.getElementById('openInDrive');
+  var typeSelect = document.getElementById('typeSelect');
+
+  // El modal se instancia de forma perezosa (solo cuando se necesita mostrar),
+  // no al cargar la página: así no depende de que bootstrap.bundle ya esté listo
+  // en el momento en que se parsea este script.
+  var _conflictModal = null;
+  function conflictModal() {
+    if (_conflictModal === null) {
+      _conflictModal = new bootstrap.Modal(document.getElementById('conflictModal'));
+    }
+    return _conflictModal;
+  }
+  var pendingReplaceDocId = null;
+
+  function currentItem() { return queue[index] || null; }
+
+  function updateCounter() {
+    var remaining = Math.max(queue.length - index, 0);
+    counter.textContent = remaining + (remaining === 1 ? ' pendiente' : ' pendientes');
+  }
+
+  function render() {
+    updateCounter();
+    var item = currentItem();
+    if (!item) {
+      panel.classList.add('d-none');
+      emptyState.classList.remove('d-none');
+      return;
+    }
+    emptyState.classList.add('d-none');
+    panel.classList.remove('d-none');
+
+    frame.src = item.preview_url || '';
+    openLink.href = item.drive_url || '#';
+    document.getElementById('infoEmployee').textContent   = item.employee_name;
+    document.getElementById('infoGroup').textContent      = item.employee_group_path;
+    document.getElementById('infoFile').textContent       = item.file_name;
+    document.getElementById('infoCurrentType').textContent = item.current_document_type_name;
+
+    // Preselecciona el tipo actual en el select, si existe entre las opciones.
+    typeSelect.value = item.current_document_type_id;
+  }
+
+  function advance() {
+    index += 1;
+    render();
+  }
+
+  function postForm(url, data) {
+    var body = new URLSearchParams();
+    Object.keys(data).forEach(function (k) {
+      if (data[k] !== null && data[k] !== undefined) body.append(k, data[k]);
+    });
+    return fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString(),
+    }).then(function (r) { return r.json().then(function (j) { return { status: r.status, json: j }; }); });
+  }
+
+  // ── Guardar y siguiente ────────────────────────────────────────────
+  function save(resolveConflict) {
+    var item = currentItem();
+    if (!item) return;
+    var payload = { new_document_type_id: typeSelect.value };
+    if (resolveConflict) payload.resolve_conflict = resolveConflict;
+
+    postForm('/reclassify/' + item.document_id, payload).then(function (res) {
+      if (res.json && res.json.conflict) {
+        document.getElementById('conflictText').textContent =
+          'Ya existe un documento de tipo "' + res.json.existing_document_type_name +
+          '" para este empleado (archivo: ' + res.json.existing_file_name + '). ¿Reemplazarlo?';
+        pendingReplaceDocId = item.document_id;
+        conflictModal().show();
+        return;
+      }
+      if (res.json && res.json.ok) {
+        advance();
+      } else {
+        alert((res.json && res.json.error) || 'No se pudo guardar.');
+      }
+    }).catch(function () { alert('Error de red al guardar.'); });
+  }
+
+  document.getElementById('btnSaveNext').addEventListener('click', function () { save(null); });
+
+  document.getElementById('btnSkip').addEventListener('click', function () { advance(); });
+
+  // ── Eliminar documento ─────────────────────────────────────────────
+  document.getElementById('btnDelete').addEventListener('click', function () {
+    var item = currentItem();
+    if (!item) return;
+    if (!confirm('¿Eliminar definitivamente este documento? Se borrará de Drive y de la base de datos.')) return;
+
+    postForm('/' + item.employee_id + '/documents/' + item.current_document_type_id + '/delete', {})
+      .then(function (res) {
+        if (res.json && res.json.ok) {
+          advance();
+        } else {
+          alert((res.json && res.json.error) || 'No se pudo eliminar.');
+        }
+      }).catch(function () { alert('Error de red al eliminar.'); });
+  });
+
+  // ── Modal de conflicto ─────────────────────────────────────────────
+  document.getElementById('btnConflictReplace').addEventListener('click', function () {
+    conflictModal().hide();
+    save('replace');
+  });
+  document.getElementById('btnConflictCancel').addEventListener('click', function () {
+    var item = currentItem();
+    conflictModal().hide();
+    // Registra la cancelación en el backend y avanza sin cambiar nada.
+    if (item) {
+      postForm('/reclassify/' + item.document_id, {
+        new_document_type_id: typeSelect.value,
+        resolve_conflict: 'cancel',
+      }).finally(function () { advance(); });
+    }
+  });
+
+  // ── Filtros: recargan la cola vía JS sin refrescar la página ────────
+  function reloadQueue() {
+    var scope = document.querySelector('input[name="filterScope"]:checked').value;
+    var onlyExtra = scope === 'extra';
+    var zona = document.getElementById('filterZona').value;
+    var url = '/reclassify/list?only_extra=' + (onlyExtra ? 'true' : 'false');
+    if (zona) url += '&group_id=' + encodeURIComponent(zona);
+
+    fetch(url).then(function (r) { return r.json(); }).then(function (data) {
+      queue = data.items || [];
+      index = 0;
+      render();
+    }).catch(function () { alert('No se pudo recargar la lista.'); });
+  }
+
+  Array.prototype.forEach.call(
+    document.querySelectorAll('input[name="filterScope"]'),
+    function (el) { el.addEventListener('change', reloadQueue); }
+  );
+  document.getElementById('filterZona').addEventListener('change', reloadQueue);
+
+  // Estado inicial
+  render();
+});
+</script>
+{% endblock %}

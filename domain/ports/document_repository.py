@@ -1,0 +1,36 @@
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+from uuid import UUID
+
+from domain.entities.document import Document
+
+
+class DocumentRepository(ABC):
+
+    @abstractmethod
+    def get_by_id(self, document_id: UUID) -> Document | None: ...
+
+    @abstractmethod
+    def get_by_employee(self, employee_id: UUID) -> list[Document]: ...
+
+    @abstractmethod
+    def get_by_employee_and_type(
+        self, employee_id: UUID, document_type_id: UUID
+    ) -> Document | None: ...
+
+    @abstractmethod
+    def list_all(self) -> list[Document]:
+        """Retorna todos los documentos existentes (para la cola de revisión)."""
+        ...
+
+    @abstractmethod
+    def save(self, document: Document) -> None: ...
+
+    @abstractmethod
+    def update(self, document: Document) -> None:
+        """Actualiza un documento existente identificado por su id."""
+        ...
+
+    @abstractmethod
+    def delete(self, employee_id: UUID, document_type_id: UUID) -> None: ...

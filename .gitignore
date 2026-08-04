@@ -1,0 +1,31 @@
+# --- Secretos y credenciales (NUNCA subir) ---
+.env
+credentials/
+
+# --- Entorno virtual de Python ---
+venv/
+.venv/
+
+# --- Cachés de Python ---
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# --- Logs y salidas ---
+*.log
+uvicorn_out.txt
+upload_response.txt
+
+# --- Reportes CSV (contienen nombres y datos de empleados) ---
+migracion_reporte.csv
+reclasificacion_log.csv
+reconciliacion_log.csv
+conflictos_reporte.csv
+
+# --- IDE / editores ---
+.idea/
+.vscode/
+
+# --- Archivos de prueba locales ---
+testarchivos/

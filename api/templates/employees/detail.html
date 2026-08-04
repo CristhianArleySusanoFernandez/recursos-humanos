@@ -1,0 +1,622 @@
+{% extends "base.html" %}
+{% block title %}
+  {% if checklist %}{{ checklist.employee.name }}{% else %}Empleado{% endif %} – DST RRHH
+{% endblock %}
+
+{% block content %}
+{% if not checklist %}
+<div class="text-center py-5">
+  <p class="fs-5" style="color:var(--color-text-muted);">Empleado no encontrado.</p>
+  <a href="/" class="btn btn-dst-secondary">← Volver al panel</a>
+</div>
+{% else %}
+
+{% set emp = checklist.employee %}
+{% set present_count, total_count = checklist.completion_ratio %}
+{% set pct = ((present_count / total_count * 100) | int) if total_count > 0 else 0 %}
+
+{# ── Encabezado con degradado ────────────────────────────────────── #}
+<div class="card mb-section" style="
+    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-light) 100%);
+    border-radius: 8px;">
+  <div class="card-body py-4 px-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+      <div>
+        <h1 class="h3 mb-1 fw-bold" style="color:#fff;">
+          {{ emp.name }}
+          {% if not emp.is_active %}
+          <span class="badge ms-2"
+                style="background-color:var(--color-accent);color:#fff;font-size:.55em;vertical-align:middle;">
+            Inactivo
+          </span>
+          {% endif %}
+        </h1>
+        <p class="mb-0" style="color:rgba(255,255,255,.75);">{{ emp.position }}</p>
+      </div>
+      <div class="d-flex gap-2 flex-wrap">
+        {% if emp.is_active %}
+        <form method="POST" action="/{{ emp.id }}/deactivate"
+              class="d-flex gap-2 align-items-center flex-wrap"
+              onsubmit="return confirm('¿Seguro que deseas desactivar a este empleado?')">
+          <select name="retirement_group_id" required
+                  class="form-select form-select-sm" style="width:auto;">
+            <option value="" disabled selected>Mover a subgrupo de Retirados…</option>
+            {% for rg in retirement_groups %}
+            <option value="{{ rg.id }}">{{ rg.name }}</option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="btn btn-sm"
+                  style="background-color:var(--color-accent-dark);color:#fff;border:none;white-space:nowrap;"
+                  {% if not retirement_groups %}disabled title="No hay subgrupos de Retirados configurados"{% endif %}>
+            Desactivar y mover a retirados
+          </button>
+        </form>
+        {% else %}
+        <form method="POST" action="/{{ emp.id }}/reactivate">
+          <button type="submit" class="btn btn-sm"
+                  style="background-color:#27ae60;color:#fff;border:none;">
+            Reactivar
+          </button>
+        </form>
+        {% endif %}
+        <a href="/" class="btn btn-sm"
+           style="background-color:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.4);">
+          ← Volver
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Progreso global ─────────────────────────────────────────────── #}
+<div class="card mb-section" style="border-left:4px solid var(--color-primary-light);">
+  <div class="card-body py-3">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <span class="fw-bold" style="color:var(--color-primary);">Completitud documental</span>
+      <span id="ratioLabel"
+            style="font-size:.85rem;color:var(--color-text-muted);">
+        {{ present_count }}/{{ total_count }} documentos activos
+      </span>
+    </div>
+    {% if pct >= 80 %}{% set bar_cls = "bar-good" %}
+    {% elif pct >= 40 %}{% set bar_cls = "bar-warning" %}
+    {% else %}{% set bar_cls = "bar-danger" %}{% endif %}
+    <div class="progress" style="height:24px;">
+      <div class="progress-bar {{ bar_cls }} fw-semibold"
+           id="progressBar"
+           role="progressbar"
+           style="width:{{ pct }}%"
+           aria-valuenow="{{ pct }}" aria-valuemin="0" aria-valuemax="100"
+           data-present="{{ present_count }}"
+           data-total="{{ total_count }}">
+        {{ pct }}%
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Editar datos ────────────────────────────────────────────────── #}
+<div class="card mb-section">
+  <div class="card-header card-header-light d-flex justify-content-between align-items-center">
+    <span>Datos del empleado</span>
+    <button class="btn btn-dst-secondary btn-sm"
+            type="button"
+            data-bs-toggle="collapse"
+            data-bs-target="#editForm"
+            aria-expanded="false"
+            aria-controls="editForm">
+      Editar ▾
+    </button>
+  </div>
+  <div class="collapse" id="editForm">
+    <div class="card-body border-top">
+      <form method="POST" action="/{{ emp.id }}/edit">
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label class="form-label fw-semibold">Nombre</label>
+            <input type="text" name="name" class="form-control"
+                   value="{{ emp.name }}" required />
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-semibold">Cargo</label>
+            <input type="text" name="position" class="form-control"
+                   value="{{ emp.position }}" required />
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-semibold">Grupo</label>
+            <select name="group_id" class="form-select" required>
+              {% for root in groups %}
+              <optgroup label="{{ root.name }}">
+                {% for child in root.children %}
+                <option value="{{ child.id }}"
+                  {% if emp.group_id == child.id %}selected{% endif %}>
+                  {{ child.name }}
+                </option>
+                {% endfor %}
+              </optgroup>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12">
+            <button type="submit" class="btn btn-dst-primary btn-sm">
+              Guardar cambios
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{# ── Macro para tabla de documentos ─────────────────────────────── #}
+{% macro doc_table(pairs, employee_id) %}
+<div class="table-responsive">
+  <table class="table table-hover align-middle mb-0">
+    <thead class="thead-dst">
+      <tr>
+        <th class="ps-3">Documento</th>
+        <th>Estado</th>
+        <th>Archivo</th>
+        <th>N/A</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for doc_type, doc, is_na in pairs %}
+      <tr id="row-{{ doc_type.id }}"
+          class="{{ 'table-secondary' if is_na else '' }}"
+          style="transition:opacity .3s;">
+        <td class="fw-semibold ps-3">{{ doc_type.name }}</td>
+        <td>
+          <span class="badge-status
+            {% if doc %}badge-presente
+            {% elif is_na %}badge-na
+            {% else %}badge-faltante{% endif %}"
+                id="badge-{{ doc_type.id }}">
+            {% if doc %}✔ Presente
+            {% elif is_na %}— No aplica
+            {% else %}✘ Faltante{% endif %}
+          </span>
+        </td>
+        <td>
+          {% if doc %}
+          <a href="{{ doc.drive_url }}" target="_blank" rel="noopener"
+             class="text-decoration-none"
+             style="font-size:.85rem;">
+            📄 {{ doc.file_name }}
+          </a>
+          {% else %}
+          <span style="color:var(--color-text-muted);font-size:.85rem;">—</span>
+          {% endif %}
+        </td>
+        <td>
+          <div class="form-check mb-0">
+            <input class="form-check-input na-checkbox"
+                   type="checkbox"
+                   {% if is_na %}checked{% endif %}
+                   data-employee-id="{{ employee_id }}"
+                   data-doc-type-id="{{ doc_type.id }}"
+                   data-has-doc="{{ 'true' if doc else 'false' }}" />
+          </div>
+        </td>
+        <td>
+          {% if doc %}
+          <button type="button"
+                  class="btn btn-dst-danger btn-sm delete-doc-btn"
+                  data-employee-id="{{ employee_id }}"
+                  data-doc-type-id="{{ doc_type.id }}"
+                  data-doc-name="{{ doc_type.name }}">
+            Eliminar
+          </button>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endmacro %}
+
+{# ── Contadores para encabezados ─────────────────────────────────── #}
+{% set ingreso_atendidos = namespace(n=0) %}
+{% for _, doc, is_na in checklist.ingreso_pairs %}
+  {% if doc or is_na %}{% set ingreso_atendidos.n = ingreso_atendidos.n + 1 %}{% endif %}
+{% endfor %}
+
+{% set retiro_atendidos = namespace(n=0) %}
+{% for _, doc, is_na in checklist.retiro_pairs %}
+  {% if doc or is_na %}{% set retiro_atendidos.n = retiro_atendidos.n + 1 %}{% endif %}
+{% endfor %}
+
+{# ── Documentos de Ingreso ───────────────────────────────────────── #}
+<div class="card mb-section" id="documentos">
+  <div class="card-header card-header-primary d-flex align-items-center gap-2">
+    <span class="flex-grow-1">Documentos de Ingreso</span>
+    <span class="badge rounded-pill"
+          style="background-color:var(--color-primary-light);"
+          id="counter-ingreso">
+      {{ ingreso_atendidos.n }}/{{ checklist.ingreso_pairs | length }}
+    </span>
+  </div>
+  <div class="card-body p-0">
+    {{ doc_table(checklist.ingreso_pairs, emp.id) }}
+  </div>
+</div>
+
+{# ── Documentos de Retiro ────────────────────────────────────────── #}
+<div class="card mb-section">
+  <div class="card-header card-header-accent d-flex align-items-center gap-2">
+    <span class="flex-grow-1">Documentos de Retiro</span>
+    <span class="badge rounded-pill"
+          style="background-color:rgba(255,255,255,.25);"
+          id="counter-retiro">
+      {{ retiro_atendidos.n }}/{{ checklist.retiro_pairs | length }}
+    </span>
+  </div>
+  <div class="card-body p-0">
+    {{ doc_table(checklist.retiro_pairs, emp.id) }}
+  </div>
+</div>
+
+{# ── Documentos Extra ────────────────────────────────────────────── #}
+{% if checklist.extra_documents %}
+<div class="card mb-section" id="extras">
+  <div class="card-header card-header-light d-flex align-items-center gap-2">
+    <span class="flex-grow-1">Documentos Extra</span>
+    <span class="badge rounded-pill"
+          style="background-color:#6b7280;color:#fff;">
+      {{ checklist.extra_documents | length }}
+    </span>
+  </div>
+  <div class="card-body p-0">
+    <div class="form-text px-3 pt-2 mb-1">
+      Archivos adicionales sin categoría asignada. No cuentan para la completitud.
+    </div>
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="thead-inner">
+          <tr>
+            <th class="ps-3">Nombre del archivo</th>
+            <th>Archivo</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for doc_type, doc in checklist.extra_documents %}
+          <tr id="row-{{ doc_type.id }}" style="transition:opacity .3s;">
+            <td class="fw-semibold ps-3">{{ doc_type.name }}</td>
+            <td>
+              <a href="{{ doc.drive_url }}" target="_blank" rel="noopener"
+                 class="text-decoration-none" style="font-size:.85rem;">
+                📄 {{ doc.file_name }}
+              </a>
+            </td>
+            <td>
+              <button type="button"
+                      class="btn btn-dst-danger btn-sm delete-extra-btn"
+                      data-employee-id="{{ emp.id }}"
+                      data-doc-type-id="{{ doc_type.id }}"
+                      data-doc-name="{{ doc_type.name }}">
+                Eliminar
+              </button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ── Subir documento ─────────────────────────────────────────────── #}
+{% if emp.is_active %}
+<div class="card card-upload mb-section" id="subir">
+  <div class="card-header card-header-light">Subir documento</div>
+  <div class="card-body">
+    <form method="POST" action="/{{ emp.id }}/upload"
+          enctype="multipart/form-data">
+      <div class="row g-3 align-items-end">
+        <div class="col-md-4">
+          <label class="form-label fw-semibold">Tipo de documento</label>
+          <select name="document_type_id" class="form-select" required>
+            <option value="" disabled selected>— Selecciona —</option>
+            <optgroup label="Ingreso">
+              {% for doc_type, _, __ in checklist.ingreso_pairs %}
+              <option value="{{ doc_type.id }}">{{ doc_type.name }}</option>
+              {% endfor %}
+            </optgroup>
+            <optgroup label="Retiro">
+              {% for doc_type, _, __ in checklist.retiro_pairs %}
+              <option value="{{ doc_type.id }}">{{ doc_type.name }}</option>
+              {% endfor %}
+            </optgroup>
+          </select>
+        </div>
+        <div class="col-md-5">
+          <label class="form-label fw-semibold">Archivo</label>
+          <input type="file" name="file" class="form-control"
+                 accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx"
+                 required />
+        </div>
+        <div class="col-md-3">
+          <button type="submit" class="btn btn-dst-primary w-100">
+            ↑ Subir documento
+          </button>
+        </div>
+      </div>
+      <div class="form-text mt-2">
+        Formatos aceptados: PDF, JPG, PNG, WEBP, DOC, DOCX.
+        Si ya existe un documento del mismo tipo, será reemplazado.
+      </div>
+    </form>
+  </div>
+</div>
+{# ── Subida masiva con clasificación automática ──────────────────── #}
+<div class="card mb-section" id="subida-masiva"
+     style="border-top:4px solid var(--color-primary-light);">
+  <div class="card-header card-header-light d-flex flex-wrap align-items-center gap-2">
+    <span class="flex-grow-1">Subir carpeta completa (clasificación automática)</span>
+    <span class="badge" id="ollamaBadge"
+          style="background-color:var(--color-accent);color:#fff;font-size:.7rem;">
+      Requiere Ollama corriendo localmente
+    </span>
+  </div>
+
+  <div class="card-body">
+    {# Resumen del último lote — se rellena por JS si llega ?bulk_result= #}
+    <div id="bulkSummary" class="mb-3" style="display:none;"></div>
+
+    {# Aviso cuando Ollama no responde #}
+    <div id="ollamaOffline" class="alert alert-warning mb-0" style="display:none;">
+      <strong>Ollama no está disponible.</strong>
+      Inicia Ollama para usar la clasificación automática.
+    </div>
+
+    {# Formulario — oculto hasta confirmar que Ollama responde #}
+    <div id="bulkForm" style="display:none;">
+      <p class="mb-3" style="font-size:.9rem;color:var(--color-text-muted);">
+        Selecciona múltiples archivos de un mismo empleado.
+        Ollama los clasificará automáticamente.
+      </p>
+      <form method="POST" action="/{{ emp.id }}/bulk-upload"
+            enctype="multipart/form-data" id="bulkUploadForm">
+        <div class="row g-3 align-items-end">
+          <div class="col-md-9">
+            <label class="form-label fw-semibold">Archivos</label>
+            <input type="file" name="files" class="form-control"
+                   accept=".pdf,.jpg,.jpeg,.png,.webp"
+                   multiple required />
+          </div>
+          <div class="col-md-3">
+            <button type="submit" class="btn btn-dst-primary w-100" id="bulkSubmitBtn">
+              ⇈ Subir y clasificar
+            </button>
+          </div>
+        </div>
+        <div class="form-text mt-2">
+          Los documentos que ya existan para este empleado se omiten (no se reemplazan).
+          Los que no se puedan clasificar se guardan como <code>EXTRA</code>.
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% else %}
+<div class="alert alert-warning mb-section">
+  Este empleado está inactivo. Reactívalo para subir documentos.
+</div>
+{% endif %}
+
+{# ── Toast de error ──────────────────────────────────────────────── #}
+<div id="errorToast"
+     style="display:none;position:fixed;bottom:1.5rem;right:1.5rem;z-index:9999;
+            background:var(--color-accent-dark);color:#fff;padding:.75rem 1.25rem;
+            border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.2);
+            max-width:320px;font-size:.9rem;">
+</div>
+
+<script>
+(function () {
+  function showError(msg) {
+    var t = document.getElementById('errorToast');
+    t.textContent = msg;
+    t.style.display = 'block';
+    setTimeout(function () { t.style.display = 'none'; }, 4000);
+  }
+
+  function postJSON(url) {
+    return fetch(url, {
+      method: 'POST',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    }).then(function (r) { return r.json(); });
+  }
+
+  var bar   = document.getElementById('progressBar');
+  var label = document.getElementById('ratioLabel');
+  var presentCount = parseInt(bar.dataset.present, 10);
+  var totalCount   = parseInt(bar.dataset.total,   10);
+
+  function updateProgress(delta) {
+    presentCount = Math.max(0, Math.min(totalCount, presentCount + delta));
+    var pct = totalCount > 0 ? Math.round(presentCount / totalCount * 100) : 0;
+    bar.style.width = pct + '%';
+    bar.textContent = pct + '%';
+    bar.setAttribute('aria-valuenow', pct);
+    bar.className = 'progress-bar fw-semibold ' +
+      (pct >= 80 ? 'bar-good' : pct >= 40 ? 'bar-warning' : 'bar-danger');
+    label.textContent = presentCount + '/' + totalCount + ' documentos activos';
+  }
+
+  /* ── Toggle N/A ─────────────────────────────────────────────── */
+  document.querySelectorAll('.na-checkbox').forEach(function (cb) {
+    cb.addEventListener('change', function () {
+      var empId     = cb.dataset.employeeId;
+      var docTypeId = cb.dataset.docTypeId;
+      var hasDoc    = cb.dataset.hasDoc === 'true';
+      var wasChecked = !cb.checked;
+
+      postJSON('/' + empId + '/documents/' + docTypeId + '/na/toggle')
+        .then(function (data) {
+          if (!data.ok) {
+            cb.checked = wasChecked;
+            showError(data.error || 'Error al cambiar N/A');
+            return;
+          }
+          var isNa  = data.is_na;
+          var row   = document.getElementById('row-' + docTypeId);
+          var badge = document.getElementById('badge-' + docTypeId);
+
+          badge.className = 'badge-status ' + (isNa ? 'badge-na' : 'badge-faltante');
+          badge.textContent = isNa ? '— No aplica' : '✘ Faltante';
+          row.classList.toggle('table-secondary', isNa);
+          if (!hasDoc) updateProgress(isNa ? +1 : -1);
+        })
+        .catch(function () {
+          cb.checked = wasChecked;
+          showError('Error de red al cambiar N/A');
+        });
+    });
+  });
+
+  /* ── Eliminar documento ─────────────────────────────────────── */
+  document.querySelectorAll('.delete-doc-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var empId     = btn.dataset.employeeId;
+      var docTypeId = btn.dataset.docTypeId;
+      var docName   = btn.dataset.docName;
+
+      if (!confirm('¿Eliminar ' + docName + '? Esta acción no se puede deshacer.')) return;
+
+      postJSON('/' + empId + '/documents/' + docTypeId + '/delete')
+        .then(function (data) {
+          if (!data.ok) { showError(data.error || 'Error al eliminar'); return; }
+
+          var row   = document.getElementById('row-' + docTypeId);
+          var badge = document.getElementById('badge-' + docTypeId);
+          var cb    = row.querySelector('.na-checkbox');
+
+          btn.remove();
+          badge.className = 'badge-status badge-faltante';
+          badge.textContent = '✘ Faltante';
+          row.classList.remove('table-secondary');
+          var cells = row.querySelectorAll('td');
+          if (cells[2]) cells[2].innerHTML =
+            '<span style="color:var(--color-text-muted);font-size:.85rem;">—</span>';
+
+          if (cb && !cb.checked) updateProgress(-1);
+          if (cb) cb.dataset.hasDoc = 'false';
+
+          row.style.opacity = '0.4';
+          setTimeout(function () { row.style.opacity = '1'; }, 600);
+        })
+        .catch(function () { showError('Error de red al eliminar'); });
+    });
+  });
+
+  /* ── Eliminar documento extra ───────────────────────────────── */
+  /* Reusa el mismo endpoint que los documentos normales, pero la fila se
+     elimina por completo y no toca la barra: los extras no cuentan. */
+  document.querySelectorAll('.delete-extra-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var empId     = btn.dataset.employeeId;
+      var docTypeId = btn.dataset.docTypeId;
+      var docName   = btn.dataset.docName;
+
+      if (!confirm('¿Eliminar ' + docName + '? Esta acción no se puede deshacer.')) return;
+
+      postJSON('/' + empId + '/documents/' + docTypeId + '/delete')
+        .then(function (data) {
+          if (!data.ok) { showError(data.error || 'Error al eliminar'); return; }
+
+          var row  = document.getElementById('row-' + docTypeId);
+          var card = document.getElementById('extras');
+          row.style.opacity = '0';
+
+          setTimeout(function () {
+            row.remove();
+            var remaining = card.querySelectorAll('tbody tr').length;
+            if (remaining === 0) {
+              card.remove();
+            } else {
+              card.querySelector('.badge').textContent = remaining;
+            }
+          }, 300);
+        })
+        .catch(function () { showError('Error de red al eliminar'); });
+    });
+  });
+
+  /* ── Subida masiva: estado de Ollama ────────────────────────── */
+  var bulkForm     = document.getElementById('bulkForm');
+  var ollamaOffline= document.getElementById('ollamaOffline');
+  var ollamaBadge  = document.getElementById('ollamaBadge');
+
+  if (bulkForm) {
+    fetch('/api/ollama-status')
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.available) {
+          bulkForm.style.display = 'block';
+          ollamaOffline.style.display = 'none';
+          ollamaBadge.textContent = 'Ollama conectado';
+          ollamaBadge.style.backgroundColor = '#27ae60';
+        } else {
+          bulkForm.style.display = 'none';
+          ollamaOffline.style.display = 'block';
+        }
+      })
+      .catch(function () {
+        bulkForm.style.display = 'none';
+        ollamaOffline.style.display = 'block';
+      });
+
+    /* Feedback durante la subida: el lote puede tardar minutos. */
+    var uploadForm = document.getElementById('bulkUploadForm');
+    var submitBtn  = document.getElementById('bulkSubmitBtn');
+    uploadForm.addEventListener('submit', function () {
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Clasificando…';
+    });
+  }
+
+  /* ── Subida masiva: resumen del último lote ─────────────────── */
+  var bulkResult = new URLSearchParams(window.location.search).get('bulk_result');
+  var summaryBox = document.getElementById('bulkSummary');
+
+  if (bulkResult && summaryBox) {
+    var counts = {};
+    bulkResult.split(',').forEach(function (part) {
+      var bits = part.split('_');
+      if (bits.length === 2) counts[bits[1]] = parseInt(bits[0], 10) || 0;
+    });
+
+    var lines = [
+      { key: 'clasificados', icon: '✓', text: 'documentos clasificados', color: '#27ae60' },
+      { key: 'extras',       icon: '→', text: 'guardados como EXTRA',    color: 'var(--color-accent)' },
+      { key: 'omitidos',     icon: '~', text: 'omitidos (ya existían)',  color: 'var(--color-text-muted)' },
+      { key: 'errores',      icon: '✗', text: 'errores',                 color: 'var(--color-accent-dark)' }
+    ];
+
+    var html = '<div style="border:1px solid var(--border-color);border-radius:8px;' +
+               'padding:.9rem 1.1rem;background:var(--card-bg);">' +
+               '<div class="fw-bold mb-2" style="color:var(--color-primary);">' +
+               'Resultado de la última subida masiva</div>';
+
+    lines.forEach(function (l) {
+      var n = counts[l.key] || 0;
+      if (n === 0) return;
+      html += '<div style="font-size:.9rem;color:' + l.color + ';">' +
+              l.icon + ' <strong>' + n + '</strong> ' + l.text + '</div>';
+    });
+
+    html += '</div>';
+    summaryBox.innerHTML = html;
+    summaryBox.style.display = 'block';
+  }
+})();
+</script>
+
+{% endif %}
+{% endblock %}
