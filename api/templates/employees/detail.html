@@ -69,7 +69,8 @@
 </div>
 
 {# ── Progreso global ─────────────────────────────────────────────── #}
-<div class="card mb-section" style="border-left:4px solid var(--color-primary-light);">
+<div class="card mb-section" id="progressCard"
+     style="border-left:4px solid var(--color-primary-light);">
   <div class="card-body py-3">
     <div class="d-flex justify-content-between align-items-center mb-2">
       <span class="fw-bold" style="color:var(--color-primary);">Completitud documental</span>
@@ -222,13 +223,22 @@
         </td>
         <td>
           {% if doc %}
-          <button type="button"
-                  class="btn btn-dst-danger btn-sm delete-doc-btn"
-                  data-employee-id="{{ employee_id }}"
-                  data-doc-type-id="{{ doc_type.id }}"
-                  data-doc-name="{{ doc_type.name }}">
-            Eliminar
-          </button>
+          <div class="d-flex gap-1">
+            <button type="button"
+                    class="btn btn-dst-secondary btn-sm change-type-btn"
+                    data-document-id="{{ doc.id }}"
+                    data-doc-type-id="{{ doc_type.id }}"
+                    data-doc-name="{{ doc_type.name }}">
+              Cambiar tipo
+            </button>
+            <button type="button"
+                    class="btn btn-dst-danger btn-sm delete-doc-btn"
+                    data-employee-id="{{ employee_id }}"
+                    data-doc-type-id="{{ doc_type.id }}"
+                    data-doc-name="{{ doc_type.name }}">
+              Eliminar
+            </button>
+          </div>
           {% endif %}
         </td>
       </tr>
@@ -249,6 +259,9 @@
   {% if doc or is_na %}{% set retiro_atendidos.n = retiro_atendidos.n + 1 %}{% endif %}
 {% endfor %}
 
+{# Región recargable vía fetch() tras "Cambiar tipo": contiene ambas tablas
+   (Ingreso/Retiro) con sus contadores ya calculados en el servidor. #}
+<div id="checklistRegion">
 {# ── Documentos de Ingreso ───────────────────────────────────────── #}
 <div class="card mb-section" id="documentos">
   <div class="card-header card-header-primary d-flex align-items-center gap-2">
@@ -278,6 +291,7 @@
     {{ doc_table(checklist.retiro_pairs, emp.id) }}
   </div>
 </div>
+</div>{# /#checklistRegion #}
 
 {# ── Documentos Extra ────────────────────────────────────────────── #}
 {% if checklist.extra_documents %}
@@ -395,6 +409,60 @@
 </div>
 {% endif %}
 
+{# ── Modal: cambiar tipo de documento ────────────────────────────── #}
+{# Reutiliza el backend de Recategorizar: POST /reclassify/{document_id}. #}
+<div class="modal fade" id="changeTypeModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Cambiar tipo de documento</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-2" style="font-size:.9rem;color:var(--color-text-muted);">
+          Archivo actual: <span class="fw-semibold" id="changeTypeDocName">—</span>
+        </p>
+        <label for="changeTypeSelect" class="form-label fw-semibold">Nuevo tipo</label>
+        <select id="changeTypeSelect" class="form-select">
+          <optgroup label="Ingreso">
+            {% for doc_type, _, __ in checklist.ingreso_pairs %}
+            <option value="{{ doc_type.id }}">{{ doc_type.name }}</option>
+            {% endfor %}
+          </optgroup>
+          <optgroup label="Retiro">
+            {% for doc_type, _, __ in checklist.retiro_pairs %}
+            <option value="{{ doc_type.id }}">{{ doc_type.name }}</option>
+            {% endfor %}
+          </optgroup>
+        </select>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-dst-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-dst-primary" id="btnChangeTypeConfirm">Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Modal: conflicto al reasignar (mismo patrón que Recategorizar) ─ #}
+<div class="modal fade" id="conflictModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Ya existe un documento de ese tipo</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-0" id="conflictText">—</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-dst-secondary" id="btnConflictCancel">Cancelar</button>
+        <button type="button" class="btn btn-dst-danger" id="btnConflictReplace">Reemplazar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 {# ── Toast de error ──────────────────────────────────────────────── #}
 <div id="errorToast"
      style="display:none;position:fixed;bottom:1.5rem;right:1.5rem;z-index:9999;
@@ -419,158 +487,264 @@
     }).then(function (r) { return r.json(); });
   }
 
-  var bar   = document.getElementById('progressBar');
-  var label = document.getElementById('ratioLabel');
-  var presentCount = parseInt(bar.dataset.present, 10);
-  var totalCount   = parseInt(bar.dataset.total,   10);
+  // POST con cuerpo form-urlencoded (para /verify y /reclassify).
+  function postForm(url, data) {
+    var body = new URLSearchParams();
+    Object.keys(data).forEach(function (k) {
+      if (data[k] !== null && data[k] !== undefined) body.append(k, data[k]);
+    });
+    return fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString(),
+    }).then(function (r) { return r.json().then(function (j) { return { status: r.status, json: j }; }); });
+  }
 
+  // updateProgress es autónomo: lee/escribe el conteo en los data-attrs de la
+  // barra, así sigue funcionando tras recargar la región (#checklistRegion /
+  // #progressCard) por swap de HTML.
   function updateProgress(delta) {
-    presentCount = Math.max(0, Math.min(totalCount, presentCount + delta));
-    var pct = totalCount > 0 ? Math.round(presentCount / totalCount * 100) : 0;
+    var bar = document.getElementById('progressBar');
+    if (!bar) return;
+    var total   = parseInt(bar.dataset.total, 10) || 0;
+    var present = parseInt(bar.dataset.present, 10) || 0;
+    present = Math.max(0, Math.min(total, present + delta));
+    bar.dataset.present = present;
+    var pct = total > 0 ? Math.round(present / total * 100) : 0;
     bar.style.width = pct + '%';
     bar.textContent = pct + '%';
     bar.setAttribute('aria-valuenow', pct);
     bar.className = 'progress-bar fw-semibold ' +
       (pct >= 80 ? 'bar-good' : pct >= 40 ? 'bar-warning' : 'bar-danger');
-    label.textContent = presentCount + '/' + totalCount + ' documentos activos';
+    var label = document.getElementById('ratioLabel');
+    if (label) label.textContent = present + '/' + total + ' documentos activos';
   }
 
+  // Recarga solo la región del checklist + la barra de progreso desde el mismo
+  // detalle (sin ruta nueva ni recarga completa). El servidor re-renderiza las
+  // filas en su tabla/categoría correcta, contadores y completitud.
+  function reloadChecklist() {
+    return fetch(window.location.pathname, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(function (r) { return r.text(); })
+      .then(function (html) {
+        var doc = new DOMParser().parseFromString(html, 'text/html');
+        var freshRegion   = doc.getElementById('checklistRegion');
+        var freshProgress = doc.getElementById('progressCard');
+        var region   = document.getElementById('checklistRegion');
+        var progress = document.getElementById('progressCard');
+        if (freshRegion && region)     region.innerHTML   = freshRegion.innerHTML;
+        if (freshProgress && progress) progress.innerHTML = freshProgress.innerHTML;
+      });
+  }
+
+  // ── Modales perezosos (bootstrap.bundle carga al final del body) ─────
+  var _changeTypeModal = null;
+  function changeTypeModal() {
+    if (_changeTypeModal === null) {
+      _changeTypeModal = new bootstrap.Modal(document.getElementById('changeTypeModal'));
+    }
+    return _changeTypeModal;
+  }
+  var _conflictModal = null;
+  function conflictModal() {
+    if (_conflictModal === null) {
+      _conflictModal = new bootstrap.Modal(document.getElementById('conflictModal'));
+    }
+    return _conflictModal;
+  }
+
+  /* ── Delegación de eventos (sobrevive al swap de #checklistRegion) ─── */
+
+  // change: N/A y Verificado
+  document.addEventListener('change', function (e) {
+    var naCb = e.target.closest ? e.target.closest('.na-checkbox') : null;
+    if (naCb) { onToggleNa(naCb); return; }
+    var vCb = e.target.closest ? e.target.closest('.verified-checkbox') : null;
+    if (vCb) { onToggleVerified(vCb); return; }
+  });
+
+  // click: eliminar doc, eliminar extra, cambiar tipo
+  document.addEventListener('click', function (e) {
+    var delBtn = e.target.closest ? e.target.closest('.delete-doc-btn') : null;
+    if (delBtn) { onDeleteDoc(delBtn); return; }
+    var delExtra = e.target.closest ? e.target.closest('.delete-extra-btn') : null;
+    if (delExtra) { onDeleteExtra(delExtra); return; }
+    var changeBtn = e.target.closest ? e.target.closest('.change-type-btn') : null;
+    if (changeBtn) { onChangeType(changeBtn); return; }
+  });
+
   /* ── Toggle N/A ─────────────────────────────────────────────── */
-  document.querySelectorAll('.na-checkbox').forEach(function (cb) {
-    cb.addEventListener('change', function () {
-      var empId     = cb.dataset.employeeId;
-      var docTypeId = cb.dataset.docTypeId;
-      var hasDoc    = cb.dataset.hasDoc === 'true';
-      var wasChecked = !cb.checked;
+  function onToggleNa(cb) {
+    var empId     = cb.dataset.employeeId;
+    var docTypeId = cb.dataset.docTypeId;
+    var hasDoc    = cb.dataset.hasDoc === 'true';
+    var wasChecked = !cb.checked;
 
-      postJSON('/' + empId + '/documents/' + docTypeId + '/na/toggle')
-        .then(function (data) {
-          if (!data.ok) {
-            cb.checked = wasChecked;
-            showError(data.error || 'Error al cambiar N/A');
-            return;
-          }
-          var isNa  = data.is_na;
-          var row   = document.getElementById('row-' + docTypeId);
-          var badge = document.getElementById('badge-' + docTypeId);
-
-          badge.className = 'badge-status ' + (isNa ? 'badge-na' : 'badge-faltante');
-          badge.textContent = isNa ? '— No aplica' : '✘ Faltante';
-          row.classList.toggle('table-secondary', isNa);
-          if (!hasDoc) updateProgress(isNa ? +1 : -1);
-        })
-        .catch(function () {
+    postJSON('/' + empId + '/documents/' + docTypeId + '/na/toggle')
+      .then(function (data) {
+        if (!data.ok) {
           cb.checked = wasChecked;
-          showError('Error de red al cambiar N/A');
-        });
-    });
-  });
+          showError(data.error || 'Error al cambiar N/A');
+          return;
+        }
+        var isNa  = data.is_na;
+        var row   = document.getElementById('row-' + docTypeId);
+        var badge = document.getElementById('badge-' + docTypeId);
 
-  /* ── Verificado manual ──────────────────────────────────────── */
-  /* Mismo patrón que N/A y eliminar: fetch() sin recargar la página.
-     Sirve para las filas del checklist y para las de Extra. */
-  document.querySelectorAll('.verified-checkbox').forEach(function (cb) {
-    cb.addEventListener('change', function () {
-      var docId     = cb.dataset.documentId;
-      var docTypeId = cb.dataset.docTypeId;
-      var newValue  = cb.checked;
-
-      var body = new URLSearchParams();
-      body.append('verified', newValue);
-
-      fetch('/' + docId + '/verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: body.toString(),
+        badge.className = 'badge-status ' + (isNa ? 'badge-na' : 'badge-faltante');
+        badge.textContent = isNa ? '— No aplica' : '✘ Faltante';
+        row.classList.toggle('table-secondary', isNa);
+        if (!hasDoc) updateProgress(isNa ? +1 : -1);
       })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-          if (!data.ok) {
-            cb.checked = !newValue;
-            showError(data.error || 'Error al actualizar verificado');
-            return;
-          }
-          var mark = document.getElementById('verified-mark-' + docTypeId);
-          if (mark) mark.style.display = newValue ? 'inline' : 'none';
-        })
-        .catch(function () {
+      .catch(function () {
+        cb.checked = wasChecked;
+        showError('Error de red al cambiar N/A');
+      });
+  }
+
+  /* ── Verificado manual (filas del checklist y de Extra) ─────── */
+  function onToggleVerified(cb) {
+    var docId     = cb.dataset.documentId;
+    var docTypeId = cb.dataset.docTypeId;
+    var newValue  = cb.checked;
+
+    postForm('/' + docId + '/verify', { verified: newValue })
+      .then(function (res) {
+        if (!(res.json && res.json.ok)) {
           cb.checked = !newValue;
-          showError('Error de red al actualizar verificado');
-        });
-    });
-  });
+          showError((res.json && res.json.error) || 'Error al actualizar verificado');
+          return;
+        }
+        var mark = document.getElementById('verified-mark-' + docTypeId);
+        if (mark) mark.style.display = newValue ? 'inline' : 'none';
+      })
+      .catch(function () {
+        cb.checked = !newValue;
+        showError('Error de red al actualizar verificado');
+      });
+  }
 
   /* ── Eliminar documento ─────────────────────────────────────── */
-  document.querySelectorAll('.delete-doc-btn').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      var empId     = btn.dataset.employeeId;
-      var docTypeId = btn.dataset.docTypeId;
-      var docName   = btn.dataset.docName;
+  function onDeleteDoc(btn) {
+    var empId     = btn.dataset.employeeId;
+    var docTypeId = btn.dataset.docTypeId;
+    var docName   = btn.dataset.docName;
 
-      if (!confirm('¿Eliminar ' + docName + '? Esta acción no se puede deshacer.')) return;
+    if (!confirm('¿Eliminar ' + docName + '? Esta acción no se puede deshacer.')) return;
 
-      postJSON('/' + empId + '/documents/' + docTypeId + '/delete')
-        .then(function (data) {
-          if (!data.ok) { showError(data.error || 'Error al eliminar'); return; }
+    postJSON('/' + empId + '/documents/' + docTypeId + '/delete')
+      .then(function (data) {
+        if (!data.ok) { showError(data.error || 'Error al eliminar'); return; }
 
-          var row   = document.getElementById('row-' + docTypeId);
-          var badge = document.getElementById('badge-' + docTypeId);
-          var cb    = row.querySelector('.na-checkbox');
+        var row   = document.getElementById('row-' + docTypeId);
+        var badge = document.getElementById('badge-' + docTypeId);
+        var cb    = row.querySelector('.na-checkbox');
 
-          btn.remove();
-          badge.className = 'badge-status badge-faltante';
-          badge.textContent = '✘ Faltante';
-          row.classList.remove('table-secondary');
-          var cells = row.querySelectorAll('td');
-          if (cells[2]) cells[2].innerHTML =
-            '<span style="color:var(--color-text-muted);font-size:.85rem;">—</span>';
-          // El documento ya no existe: limpia la celda de verificado y su marca.
-          if (cells[4]) cells[4].innerHTML =
-            '<span style="color:var(--color-text-muted);font-size:.85rem;">—</span>';
-          var vmark = document.getElementById('verified-mark-' + docTypeId);
-          if (vmark) vmark.style.display = 'none';
+        badge.className = 'badge-status badge-faltante';
+        badge.textContent = '✘ Faltante';
+        row.classList.remove('table-secondary');
+        var cells = row.querySelectorAll('td');
+        // La celda de acciones (Cambiar tipo / Eliminar) ya no aplica.
+        if (cells[5]) cells[5].innerHTML = '';
+        if (cells[2]) cells[2].innerHTML =
+          '<span style="color:var(--color-text-muted);font-size:.85rem;">—</span>';
+        // El documento ya no existe: limpia la celda de verificado y su marca.
+        if (cells[4]) cells[4].innerHTML =
+          '<span style="color:var(--color-text-muted);font-size:.85rem;">—</span>';
+        var vmark = document.getElementById('verified-mark-' + docTypeId);
+        if (vmark) vmark.style.display = 'none';
 
-          if (cb && !cb.checked) updateProgress(-1);
-          if (cb) cb.dataset.hasDoc = 'false';
+        if (cb && !cb.checked) updateProgress(-1);
+        if (cb) cb.dataset.hasDoc = 'false';
 
-          row.style.opacity = '0.4';
-          setTimeout(function () { row.style.opacity = '1'; }, 600);
-        })
-        .catch(function () { showError('Error de red al eliminar'); });
-    });
-  });
+        row.style.opacity = '0.4';
+        setTimeout(function () { row.style.opacity = '1'; }, 600);
+      })
+      .catch(function () { showError('Error de red al eliminar'); });
+  }
 
   /* ── Eliminar documento extra ───────────────────────────────── */
-  /* Reusa el mismo endpoint que los documentos normales, pero la fila se
-     elimina por completo y no toca la barra: los extras no cuentan. */
-  document.querySelectorAll('.delete-extra-btn').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      var empId     = btn.dataset.employeeId;
-      var docTypeId = btn.dataset.docTypeId;
-      var docName   = btn.dataset.docName;
+  function onDeleteExtra(btn) {
+    var empId     = btn.dataset.employeeId;
+    var docTypeId = btn.dataset.docTypeId;
+    var docName   = btn.dataset.docName;
 
-      if (!confirm('¿Eliminar ' + docName + '? Esta acción no se puede deshacer.')) return;
+    if (!confirm('¿Eliminar ' + docName + '? Esta acción no se puede deshacer.')) return;
 
-      postJSON('/' + empId + '/documents/' + docTypeId + '/delete')
-        .then(function (data) {
-          if (!data.ok) { showError(data.error || 'Error al eliminar'); return; }
+    postJSON('/' + empId + '/documents/' + docTypeId + '/delete')
+      .then(function (data) {
+        if (!data.ok) { showError(data.error || 'Error al eliminar'); return; }
 
-          var row  = document.getElementById('row-' + docTypeId);
-          var card = document.getElementById('extras');
-          row.style.opacity = '0';
+        var row  = document.getElementById('row-' + docTypeId);
+        var card = document.getElementById('extras');
+        row.style.opacity = '0';
 
-          setTimeout(function () {
-            row.remove();
-            var remaining = card.querySelectorAll('tbody tr').length;
-            if (remaining === 0) {
-              card.remove();
-            } else {
-              card.querySelector('.badge').textContent = remaining;
-            }
-          }, 300);
-        })
-        .catch(function () { showError('Error de red al eliminar'); });
-    });
+        setTimeout(function () {
+          row.remove();
+          var remaining = card.querySelectorAll('tbody tr').length;
+          if (remaining === 0) {
+            card.remove();
+          } else {
+            card.querySelector('.badge').textContent = remaining;
+          }
+        }, 300);
+      })
+      .catch(function () { showError('Error de red al eliminar'); });
+  }
+
+  /* ── Cambiar tipo (reutiliza POST /reclassify/{document_id}) ──── */
+  var pendingChange = null;   // { docId, newTypeId } en espera de resolver conflicto
+
+  function onChangeType(btn) {
+    var docId   = btn.dataset.documentId;
+    var docName = btn.dataset.docName;
+    document.getElementById('changeTypeDocName').textContent = docName;
+    var select = document.getElementById('changeTypeSelect');
+    select.value = btn.dataset.docTypeId;   // preselecciona el tipo actual
+    document.getElementById('btnChangeTypeConfirm').dataset.documentId = docId;
+    changeTypeModal().show();
+  }
+
+  document.getElementById('btnChangeTypeConfirm').addEventListener('click', function () {
+    var docId     = this.dataset.documentId;
+    var newTypeId = document.getElementById('changeTypeSelect').value;
+    changeTypeModal().hide();
+    reclassify(docId, newTypeId, null);
+  });
+
+  function reclassify(docId, newTypeId, resolveConflict) {
+    var payload = { new_document_type_id: newTypeId };
+    if (resolveConflict) payload.resolve_conflict = resolveConflict;
+
+    postForm('/reclassify/' + docId, payload)
+      .then(function (res) {
+        if (res.json && res.json.conflict) {
+          document.getElementById('conflictText').textContent =
+            'Ya existe un documento de tipo "' + res.json.existing_document_type_name +
+            '" para este empleado (archivo: ' + res.json.existing_file_name + '). ¿Reemplazarlo?';
+          pendingChange = { docId: docId, newTypeId: newTypeId };
+          conflictModal().show();
+          return;
+        }
+        if (res.json && res.json.ok) {
+          reloadChecklist();
+        } else {
+          showError((res.json && res.json.error) || 'No se pudo cambiar el tipo.');
+        }
+      })
+      .catch(function () { showError('Error de red al cambiar el tipo.'); });
+  }
+
+  document.getElementById('btnConflictReplace').addEventListener('click', function () {
+    conflictModal().hide();
+    if (pendingChange) {
+      reclassify(pendingChange.docId, pendingChange.newTypeId, 'replace');
+      pendingChange = null;
+    }
+  });
+  document.getElementById('btnConflictCancel').addEventListener('click', function () {
+    conflictModal().hide();
+    pendingChange = null;   // no se cambia nada
   });
 
 })();
