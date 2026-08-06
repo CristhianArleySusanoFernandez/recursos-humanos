@@ -29,11 +29,15 @@ class ListEmployees:
             else:
                 employees = self._employee_repo.list_all(active_only)
 
-        # [PERF-DEBUG] El siguiente loop hace UNA query a Supabase por CADA empleado
-        # (N+1). Medimos el total y el número de queries para confirmarlo.
-        with timed(f"ListEmployees: N+1 documentos ({len(employees)} queries get_by_employee)"):
-            for employee in employees:
-                employee.documents = self._document_repo.get_by_employee(employee.id)
-        log(f"ListEmployees: {len(employees)} empleados → {len(employees)} queries de documentos")
+        # UNA sola consulta bulk trae los documentos de TODOS los empleados a la
+        # vez (filtro IN + paginación), en lugar del antiguo N+1 (una query por
+        # empleado). Luego se asignan desde el diccionario en memoria, sin más red.
+        with timed(f"ListEmployees: documentos bulk (1 query get_by_employees, {len(employees)} empleados)"):
+            docs_by_employee = self._document_repo.get_by_employees(
+                [employee.id for employee in employees]
+            )
+        for employee in employees:
+            employee.documents = docs_by_employee.get(employee.id, [])
+        log(f"ListEmployees: {len(employees)} empleados → 1 query bulk de documentos")
 
         return employees

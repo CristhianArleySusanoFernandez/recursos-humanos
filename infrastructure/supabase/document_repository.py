@@ -50,6 +50,38 @@ class SupabaseDocumentRepository(DocumentRepository):
         )
         return [_row_to_document(row) for row in (response.data or [])]
 
+    def get_by_employees(
+        self, employee_ids: list[UUID]
+    ) -> dict[UUID, list[Document]]:
+        # Trae los documentos de todos los empleados de la lista con UNA consulta
+        # bulk (filtro IN sobre employee_id), agrupados por employee_id. Se pagina
+        # con .range() igual que list_all(), porque PostgREST corta a ~1000 filas
+        # y varios empleados juntos superan ese tope fácilmente.
+        result: dict[UUID, list[Document]] = {eid: [] for eid in employee_ids}
+        if not employee_ids:
+            return result
+
+        id_strings = [str(eid) for eid in employee_ids]
+        page_size = 1000
+        offset = 0
+        while True:
+            response = (
+                self._db.table(_TABLE)
+                .select("*")
+                .in_("employee_id", id_strings)
+                .order("uploaded_at", desc=True)
+                .range(offset, offset + page_size - 1)
+                .execute()
+            )
+            batch = response.data or []
+            for row in batch:
+                doc = _row_to_document(row)
+                result.setdefault(doc.employee_id, []).append(doc)
+            if len(batch) < page_size:
+                break
+            offset += page_size
+        return result
+
     def get_by_employee_and_type(
         self, employee_id: UUID, document_type_id: UUID
     ) -> Document | None:
