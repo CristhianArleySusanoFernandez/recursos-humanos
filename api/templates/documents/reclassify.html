@@ -38,6 +38,29 @@
         <span class="badge bg-secondary fs-6" id="pendingCounter">0 pendientes</span>
       </div>
     </div>
+
+    {# ── Filtro por empleado (autocompletar) ─────────────────────────── #}
+    <div class="row g-3 mt-1">
+      <div class="col-md-8 position-relative">
+        <label for="filterEmployee" class="form-label fw-semibold">Empleado</label>
+        <input type="text" id="filterEmployee" class="form-control" autocomplete="off"
+               placeholder="Buscar empleado...">
+        {# Dropdown de resultados del autocompletar. #}
+        <div id="employeeResults" class="list-group position-absolute w-100 shadow"
+             style="z-index:1050;max-height:280px;overflow-y:auto;display:none;"></div>
+      </div>
+      <div class="col-md-4 d-flex align-items-end">
+        {# Chip visible del filtro activo por empleado. #}
+        <span id="employeeChip" class="badge bg-success d-none"
+              style="font-size:.85rem;padding:.5rem .75rem;">
+          Filtrando: <span id="employeeChipName" class="fw-semibold"></span>
+          <button type="button" id="employeeChipClear"
+                  class="btn-close btn-close-white ms-2"
+                  style="font-size:.55rem;vertical-align:middle;"
+                  aria-label="Quitar filtro por empleado"></button>
+        </span>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -310,13 +333,101 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   });
 
+  // ── Filtro por empleado (autocompletar) ────────────────────────────
+  var filterZona     = document.getElementById('filterZona');
+  var filterEmployee = document.getElementById('filterEmployee');
+  var employeeResults = document.getElementById('employeeResults');
+  var employeeChip     = document.getElementById('employeeChip');
+  var employeeChipName = document.getElementById('employeeChipName');
+
+  // Filtro de empleado activo (gana sobre la zona). Vacío = sin filtro.
+  var selectedEmployeeId = '';
+
+  // Refleja en la UI si el filtro por empleado está activo: cuando lo está,
+  // la Zona se ignora y se deshabilita para no confundir cuál manda.
+  function applyEmployeeFilterUI(active, name) {
+    if (active) {
+      employeeChipName.textContent = name || '';
+      employeeChip.classList.remove('d-none');
+      filterZona.value = '';
+      filterZona.disabled = true;
+    } else {
+      employeeChip.classList.add('d-none');
+      filterZona.disabled = false;
+    }
+  }
+
+  function hideEmployeeResults() {
+    employeeResults.style.display = 'none';
+    employeeResults.innerHTML = '';
+  }
+
+  function renderEmployeeResults(results) {
+    employeeResults.innerHTML = '';
+    if (!results.length) {
+      hideEmployeeResults();
+      return;
+    }
+    results.forEach(function (r) {
+      var a = document.createElement('button');
+      a.type = 'button';
+      a.className = 'list-group-item list-group-item-action';
+      a.innerHTML = '<span class="fw-semibold"></span> ' +
+                    '<small class="text-muted"></small>';
+      a.querySelector('.fw-semibold').textContent = r.name;
+      a.querySelector('.text-muted').textContent = '(' + r.group_path + ')';
+      a.addEventListener('click', function () {
+        selectedEmployeeId = r.id;
+        filterEmployee.value = '';
+        hideEmployeeResults();
+        applyEmployeeFilterUI(true, r.name);
+        reloadQueue();
+      });
+      employeeResults.appendChild(a);
+    });
+    employeeResults.style.display = 'block';
+  }
+
+  var searchTimer = null;
+  filterEmployee.addEventListener('input', function () {
+    var q = filterEmployee.value.trim();
+    if (searchTimer) clearTimeout(searchTimer);
+    if (q.length < 2) { hideEmployeeResults(); return; }
+    searchTimer = setTimeout(function () {
+      fetch('/reclassify/search-employees?q=' + encodeURIComponent(q))
+        .then(function (r) { return r.json(); })
+        .then(function (data) { renderEmployeeResults(data.results || []); })
+        .catch(function () { hideEmployeeResults(); });
+    }, 300);
+  });
+
+  // Cierra el dropdown al hacer clic fuera del input/resultados.
+  document.addEventListener('click', function (e) {
+    if (e.target !== filterEmployee && !employeeResults.contains(e.target)) {
+      hideEmployeeResults();
+    }
+  });
+
+  // Quitar el filtro por empleado: vuelve al comportamiento normal (Zona/scope).
+  document.getElementById('employeeChipClear').addEventListener('click', function () {
+    selectedEmployeeId = '';
+    applyEmployeeFilterUI(false);
+    reloadQueue();
+  });
+
   // ── Filtros: recargan la cola vía JS sin refrescar la página ────────
   function reloadQueue() {
     var scope = document.querySelector('input[name="filterScope"]:checked').value;
     var onlyExtra = scope === 'extra';
-    var zona = document.getElementById('filterZona').value;
     var url = '/reclassify/list?only_extra=' + (onlyExtra ? 'true' : 'false');
-    if (zona) url += '&group_id=' + encodeURIComponent(zona);
+
+    if (selectedEmployeeId) {
+      // El filtro por empleado prevalece: se ignora la zona.
+      url += '&employee_id=' + encodeURIComponent(selectedEmployeeId);
+    } else {
+      var zona = filterZona.value;
+      if (zona) url += '&group_id=' + encodeURIComponent(zona);
+    }
 
     fetch(url).then(function (r) { return r.json(); }).then(function (data) {
       queue = data.items || [];
@@ -329,9 +440,17 @@ document.addEventListener('DOMContentLoaded', function () {
     document.querySelectorAll('input[name="filterScope"]'),
     function (el) { el.addEventListener('change', reloadQueue); }
   );
-  document.getElementById('filterZona').addEventListener('change', reloadQueue);
+  filterZona.addEventListener('change', reloadQueue);
 
-  // Estado inicial
+  // Estado inicial: si la página cargó con employee_id (deep link), activa el
+  // chip mostrando el nombre del primer item (todos son del mismo empleado).
+  var initialEmployeeId = '{{ selected_employee_id }}';
+  if (initialEmployeeId) {
+    selectedEmployeeId = initialEmployeeId;
+    var name = (queue[0] && queue[0].employee_name) || 'empleado';
+    applyEmployeeFilterUI(true, name);
+  }
+
   render();
 });
 </script>

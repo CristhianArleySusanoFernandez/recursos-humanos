@@ -5,9 +5,10 @@ de cualquier documento ya subido (no solo los EXTRA).
 Rutas (registradas ANTES del router de empleados en main.py, porque /reclassify
 es estática y colisionaría con el patrón dinámico GET /{employee_id}):
 
-  GET  /reclassify              → página HTML con la cola precargada
-  GET  /reclassify/list         → JSON de pendientes (para recargar por filtros)
-  POST /reclassify/{document_id}→ aplica el cambio; JSON {ok} o {conflict}
+  GET  /reclassify                     → página HTML con la cola precargada
+  GET  /reclassify/list                → JSON de pendientes (recarga por filtros)
+  GET  /reclassify/search-employees    → JSON autocompletar de empleados
+  POST /reclassify/{document_id}       → aplica el cambio; JSON {ok} o {conflict}
 """
 from uuid import UUID
 
@@ -17,10 +18,14 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from api.dependencies import (
     get_document_repo,
     get_document_type_repo,
+    get_employee_repo,
+    get_group_repo,
     get_list_documents_for_review,
     get_list_groups,
     get_reclassify_document,
 )
+from infrastructure.supabase.employee_repository import SupabaseEmployeeRepository
+from infrastructure.supabase.group_repository import SupabaseGroupRepository
 from application.use_cases._shared import (
     EXTRA_AUTO_SENTINEL,
     get_or_create_extra_type,
@@ -71,21 +76,49 @@ def _collect_items(
     list_uc: ListDocumentsForReview,
     only_extra: bool,
     group_id: UUID | None,
+    employee_id: UUID | None = None,
 ) -> list[dict]:
     items = list_uc.execute(ListDocumentsForReviewInput(
         only_extra=only_extra,
         group_id=group_id,
+        employee_id=employee_id,
     ))
     return [_item_to_dict(it) for it in items]
 
 
-def _parse_group_id(group_id: str | None) -> UUID | None:
-    if not group_id:
+def _parse_uuid(value: str | None) -> UUID | None:
+    if not value:
         return None
     try:
-        return UUID(group_id)
+        return UUID(value)
     except ValueError:
         return None
+
+
+def _flatten_groups(roots) -> dict:
+    """Aplana el árbol de grupos (roots con children) a {id: group}."""
+    flat: dict = {}
+
+    def walk(groups) -> None:
+        for g in groups:
+            flat[g.id] = g
+            if g.children:
+                walk(g.children)
+
+    walk(roots)
+    return flat
+
+
+def _group_path(group_id, flat) -> str:
+    """Ruta 'Zona / Subgrupo' subiendo por parent_id."""
+    names: list[str] = []
+    seen: set = set()
+    current = flat.get(group_id) if group_id else None
+    while current and current.id not in seen:
+        seen.add(current.id)
+        names.append(current.name)
+        current = flat.get(current.parent_id) if current.parent_id else None
+    return " / ".join(reversed(names)) if names else "(sin grupo)"
 
 
 # ---------------------------------------------------------------------------
@@ -98,12 +131,14 @@ async def reclassify_page(
     request: Request,
     only_extra: bool = False,
     group_id: str | None = None,
+    employee_id: str | None = None,
     list_uc: ListDocumentsForReview = Depends(get_list_documents_for_review),
     document_type_repo: SupabaseDocumentTypeRepository = Depends(get_document_type_repo),
     groups_uc: ListGroups = Depends(get_list_groups),
 ):
-    gid = _parse_group_id(group_id)
-    items = _collect_items(list_uc, only_extra, gid)
+    gid = _parse_uuid(group_id)
+    eid = _parse_uuid(employee_id)
+    items = _collect_items(list_uc, only_extra, gid, eid)
 
     # Opciones DESTINO del select "Reasignar a": solo tipos activos y SIN los
     # autogenerados de categoría EXTRA (cuyo name es el nombre del archivo), para
@@ -121,6 +156,7 @@ async def reclassify_page(
         "zonas": groups_uc.execute(),            # grupos raíz (para el filtro)
         "only_extra": only_extra,
         "selected_group_id": group_id or "",
+        "selected_employee_id": employee_id or "",
     })
 
 
@@ -133,10 +169,36 @@ async def reclassify_page(
 async def reclassify_list(
     only_extra: bool = False,
     group_id: str | None = None,
+    employee_id: str | None = None,
     list_uc: ListDocumentsForReview = Depends(get_list_documents_for_review),
 ):
-    gid = _parse_group_id(group_id)
-    return JSONResponse({"items": _collect_items(list_uc, only_extra, gid)})
+    gid = _parse_uuid(group_id)
+    eid = _parse_uuid(employee_id)
+    return JSONResponse({"items": _collect_items(list_uc, only_extra, gid, eid)})
+
+
+# ---------------------------------------------------------------------------
+# Autocompletar de empleados (busca por nombre, activos e inactivos)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/reclassify/search-employees")
+async def search_employees(
+    q: str = "",
+    employee_repo: SupabaseEmployeeRepository = Depends(get_employee_repo),
+    group_repo: SupabaseGroupRepository = Depends(get_group_repo),
+):
+    matches = employee_repo.search_by_name(q, limit=15)
+    flat = _flatten_groups(group_repo.list_all())
+    results = [
+        {
+            "id": str(e.id),
+            "name": e.name,
+            "group_path": _group_path(e.group_id, flat),
+        }
+        for e in matches
+    ]
+    return JSONResponse({"results": results})
 
 
 # ---------------------------------------------------------------------------

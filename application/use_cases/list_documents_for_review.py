@@ -41,6 +41,9 @@ class DocumentReviewItem:
 class ListDocumentsForReviewInput:
     only_extra: bool = False
     group_id: UUID | None = None
+    # Filtro por empleado concreto. Es el más específico: si viene, prevalece
+    # sobre el filtro de zona (group_id se ignora).
+    employee_id: UUID | None = None
 
 
 class ListDocumentsForReview:
@@ -97,7 +100,12 @@ class ListDocumentsForReview:
                 if employee is None:
                     continue
 
-                if data.group_id is not None and not self._in_group_subtree(
+                # El filtro por empleado es el más específico y prevalece: si
+                # viene employee_id, se ignora el filtro de zona (group_id).
+                if data.employee_id is not None:
+                    if doc.employee_id != data.employee_id:
+                        continue
+                elif data.group_id is not None and not self._in_group_subtree(
                     employee.group_id, data.group_id, groups_by_id
                 ):
                     continue

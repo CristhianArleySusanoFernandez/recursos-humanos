@@ -49,6 +49,24 @@ class SupabaseEmployeeRepository(EmployeeRepository):
         response = query.order("name").execute()
         return [_row_to_employee(row) for row in (response.data or [])]
 
+    def search_by_name(self, query: str, limit: int = 15) -> list[Employee]:
+        """
+        Busca empleados por nombre (ILIKE, insensible a mayúsculas) entre TODOS
+        (activos e inactivos). Devuelve como máximo `limit` resultados.
+        """
+        term = (query or "").strip()
+        if not term:
+            return []
+        response = (
+            self._db.table(_TABLE)
+            .select("*")
+            .ilike("name", f"%{term}%")
+            .order("name")
+            .limit(limit)
+            .execute()
+        )
+        return [_row_to_employee(row) for row in (response.data or [])]
+
     def list_all(self, active_only: bool = True) -> list[Employee]:
         # active_only=True  → solo activos
         # active_only=False → solo inactivos (NO "todos")
