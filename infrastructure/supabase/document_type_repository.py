@@ -32,7 +32,9 @@ class SupabaseDocumentTypeRepository(DocumentTypeRepository):
         query = self._db.table(_TABLE).select("*").eq("is_active", True)
         if exclude_category is not None:
             query = query.neq("category", exclude_category)
-        response = query.order("category").order("order_index").execute()
+        # Orden alfabético por nombre dentro de cada categoría (order_index se
+        # conserva en BD pero ya no se usa para ordenar).
+        response = query.order("category").order("name").execute()
         return [_row_to_document_type(row) for row in (response.data or [])]
 
     def list_all(self) -> list[DocumentType]:
@@ -40,7 +42,7 @@ class SupabaseDocumentTypeRepository(DocumentTypeRepository):
             self._db.table(_TABLE)
             .select("*")
             .order("category")
-            .order("order_index")
+            .order("name")
             .execute()
         )
         return [_row_to_document_type(row) for row in (response.data or [])]

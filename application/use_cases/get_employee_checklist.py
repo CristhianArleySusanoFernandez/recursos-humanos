@@ -10,6 +10,8 @@ from domain.ports.document_repository import DocumentRepository
 from domain.ports.document_type_repository import DocumentTypeRepository
 from domain.ports.employee_repository import EmployeeRepository
 
+from application.use_cases._shared import normalize_name_key
+
 
 @dataclass
 class EmployeeChecklist:
@@ -49,7 +51,7 @@ class GetEmployeeChecklist:
 
         all_types = sorted(
             self._document_type_repo.list_active(),
-            key=lambda dt: (dt.category, dt.order_index),
+            key=lambda dt: (dt.category, normalize_name_key(dt.name)),
         )
 
         # Los tipos EXTRA se separan: no son documentos requeridos, así que

@@ -5,10 +5,12 @@ from fastapi.responses import JSONResponse, RedirectResponse
 
 from api.dependencies import (
     get_delete_document,
+    get_document_type_repo,
     get_toggle_document_na,
     get_toggle_document_verified,
     get_upload_document,
 )
+from application.use_cases._shared import EXTRA_AUTO_SENTINEL, get_or_create_extra_type
 from application.use_cases.delete_document import DeleteDocument
 from application.use_cases.toggle_document_na import ToggleDocumentNa, ToggleDocumentNaInput
 from application.use_cases.toggle_document_verified import (
@@ -17,6 +19,9 @@ from application.use_cases.toggle_document_verified import (
 )
 from application.use_cases.upload_document import UploadDocument, UploadDocumentInput
 from domain.exceptions import DomainError
+from infrastructure.supabase.document_type_repository import (
+    SupabaseDocumentTypeRepository,
+)
 
 router = APIRouter()
 
@@ -46,22 +51,29 @@ async def upload_document(
     document_type_id: str = Form(...),
     file: UploadFile = File(...),
     use_case: UploadDocument = Depends(get_upload_document),
+    document_type_repo: SupabaseDocumentTypeRepository = Depends(get_document_type_repo),
 ):
     detail_url = f"/{employee_id}#documentos"
-
-    try:
-        doc_type_uuid = UUID(document_type_id)
-    except ValueError:
-        return RedirectResponse(
-            url=f"/{employee_id}?error=ID+de+tipo+de+documento+no+válido#documentos",
-            status_code=303,
-        )
 
     if file.content_type not in _ALLOWED_MIME_TYPES:
         return RedirectResponse(
             url=f"/{employee_id}?error=Tipo+de+archivo+no+permitido+({file.content_type})#documentos",
             status_code=303,
         )
+
+    original_name = file.filename or "documento"
+
+    # "EXTRA_AUTO": marcar como Extra → tipo EXTRA propio derivado del archivo.
+    if document_type_id == EXTRA_AUTO_SENTINEL:
+        doc_type_uuid = get_or_create_extra_type(document_type_repo, original_name)
+    else:
+        try:
+            doc_type_uuid = UUID(document_type_id)
+        except ValueError:
+            return RedirectResponse(
+                url=f"/{employee_id}?error=ID+de+tipo+de+documento+no+válido#documentos",
+                status_code=303,
+            )
 
     file_content = await file.read()
 

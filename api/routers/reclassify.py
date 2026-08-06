@@ -15,11 +15,18 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from api.dependencies import (
+    get_document_repo,
     get_document_type_repo,
     get_list_documents_for_review,
     get_list_groups,
     get_reclassify_document,
 )
+from application.use_cases._shared import (
+    EXTRA_AUTO_SENTINEL,
+    get_or_create_extra_type,
+    normalize_name_key,
+)
+from infrastructure.supabase.document_repository import SupabaseDocumentRepository
 from api.templating import templates
 from application.use_cases.list_documents_for_review import (
     DocumentReviewItem,
@@ -104,7 +111,7 @@ async def reclassify_page(
     # (esos sí incluyen los EXTRA).
     document_types = sorted(
         document_type_repo.list_active(exclude_category="EXTRA"),
-        key=lambda dt: (dt.category, dt.order_index),
+        key=lambda dt: (dt.category, normalize_name_key(dt.name)),
     )
 
     return templates.TemplateResponse("documents/reclassify.html", {
@@ -140,17 +147,36 @@ async def reclassify_list(
 @router.post("/reclassify/{document_id}")
 async def reclassify_apply(
     document_id: UUID,
-    new_document_type_id: UUID = Form(...),
+    new_document_type_id: str = Form(...),
     resolve_conflict: str | None = Form(None),
     use_case: ReclassifyDocument = Depends(get_reclassify_document),
+    document_repo: SupabaseDocumentRepository = Depends(get_document_repo),
+    document_type_repo: SupabaseDocumentTypeRepository = Depends(get_document_type_repo),
 ):
     # Normaliza cadenas vacías provenientes del formulario a None.
     resolve = resolve_conflict or None
 
+    # "EXTRA_AUTO": el usuario quiere marcar el documento como Extra. Se le crea
+    # (o reutiliza) un tipo EXTRA propio derivado del nombre del archivo actual.
+    try:
+        if new_document_type_id == EXTRA_AUTO_SENTINEL:
+            document = document_repo.get_by_id(document_id)
+            if document is None:
+                return JSONResponse(
+                    {"ok": False, "error": "Documento no encontrado."}, status_code=404
+                )
+            target_type_id = get_or_create_extra_type(document_type_repo, document.file_name)
+        else:
+            target_type_id = UUID(new_document_type_id)
+    except ValueError:
+        return JSONResponse(
+            {"ok": False, "error": "Tipo de documento no válido."}, status_code=400
+        )
+
     try:
         result = use_case.execute(ReclassifyDocumentInput(
             document_id=document_id,
-            new_document_type_id=new_document_type_id,
+            new_document_type_id=target_type_id,
             resolve_conflict=resolve,
         ))
     except DomainError as exc:

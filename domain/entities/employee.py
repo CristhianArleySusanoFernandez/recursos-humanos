@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
 from .document import Document
 from .document_type import EXTRA_CATEGORY, DocumentType
+
+
+def _name_sort_key(name: str) -> str:
+    """Clave de orden alfabético insensible a mayúsculas y tildes."""
+    nfkd = unicodedata.normalize("NFKD", name or "")
+    return "".join(c for c in nfkd if not unicodedata.combining(c)).strip().lower()
 
 
 @dataclass
@@ -49,12 +56,12 @@ class Employee:
         """
         Retorna todos los tipos activos de la categoría dada, junto con el
         documento del empleado si existe, o None si falta.
-        Ordenado por order_index.
+        Ordenado alfabéticamente por nombre.
         """
         by_type_id: dict[UUID, Document] = {d.document_type_id: d for d in self.documents}
         types_in_category = sorted(
             (dt for dt in document_types if dt.category == category and dt.is_active),
-            key=lambda dt: dt.order_index,
+            key=lambda dt: _name_sort_key(dt.name),
         )
         return [(dt, by_type_id.get(dt.id)) for dt in types_in_category]
 

@@ -291,9 +291,10 @@
     {{ doc_table(checklist.retiro_pairs, emp.id) }}
   </div>
 </div>
-</div>{# /#checklistRegion #}
 
 {# ── Documentos Extra ────────────────────────────────────────────── #}
+{# Dentro de #checklistRegion para que al marcar un doc como Extra aparezca
+   aquí tras la recarga parcial. #}
 {% if checklist.extra_documents %}
 <div class="card mb-section" id="extras">
   <div class="card-header card-header-light d-flex align-items-center gap-2">
@@ -359,6 +360,7 @@
   </div>
 </div>
 {% endif %}
+</div>{# /#checklistRegion #}
 
 {# ── Subir documento ─────────────────────────────────────────────── #}
 {% if emp.is_active %}
@@ -381,6 +383,10 @@
               {% for doc_type, _, __ in checklist.retiro_pairs %}
               <option value="{{ doc_type.id }}">{{ doc_type.name }}</option>
               {% endfor %}
+            </optgroup>
+            {# Acción especial: siempre al final, no es un tipo más. #}
+            <optgroup label="Otro">
+              <option value="EXTRA_AUTO">No aplica a las categorías (marcar como Extra)</option>
             </optgroup>
           </select>
         </div>
@@ -433,6 +439,10 @@
             {% for doc_type, _, __ in checklist.retiro_pairs %}
             <option value="{{ doc_type.id }}">{{ doc_type.name }}</option>
             {% endfor %}
+          </optgroup>
+          {# Acción especial: siempre al final, no es un tipo más. #}
+          <optgroup label="Otro">
+            <option value="EXTRA_AUTO">No aplica a las categorías (marcar como Extra)</option>
           </optgroup>
         </select>
       </div>

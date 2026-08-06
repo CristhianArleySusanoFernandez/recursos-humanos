@@ -78,6 +78,10 @@
             {% endfor %}
           </optgroup>
           {% endfor %}
+          {# Acción especial: siempre al final, no es un tipo más. #}
+          <optgroup label="Otro">
+            <option value="EXTRA_AUTO">No aplica a las categorías (marcar como Extra)</option>
+          </optgroup>
         </select>
 
         {# Verificación manual — independiente del tipo; no recarga la página. #}
