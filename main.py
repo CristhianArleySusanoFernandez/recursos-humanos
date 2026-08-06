@@ -31,6 +31,21 @@ app = FastAPI(
 
 app.mount("/static", StaticFiles(directory="api/static"), name="static")
 
+
+# [PERF-DEBUG] Middleware TEMPORAL: mide el tiempo total de cada request y lo
+# imprime en consola (método, ruta, ms). Eliminar tras diagnosticar.
+import time as _perf_time  # noqa: E402
+
+
+@app.middleware("http")
+async def _perf_timing_middleware(request: Request, call_next):
+    _t0 = _perf_time.perf_counter()
+    response = await call_next(request)
+    _dt_ms = (_perf_time.perf_counter() - _t0) * 1000
+    print(f"[PERF] === {request.method} {request.url.path} -> {_dt_ms:.1f} ms TOTAL ===",
+          flush=True)
+    return response
+
 # ---------------------------------------------------------------------------
 # Routers
 # ---------------------------------------------------------------------------

@@ -21,6 +21,8 @@ from domain.ports.document_type_repository import DocumentTypeRepository
 from domain.ports.employee_repository import EmployeeRepository
 from domain.ports.group_repository import GroupRepository
 
+from perf_debug import log, timed  # [PERF-DEBUG] instrumentación temporal
+
 
 @dataclass
 class DocumentReviewItem:
@@ -55,49 +57,63 @@ class ListDocumentsForReview:
         self._group_repo = group_repo
 
     def execute(self, data: ListDocumentsForReviewInput) -> list[DocumentReviewItem]:
-        types_by_id = {dt.id: dt for dt in self._document_type_repo.list_all()}
+        # [PERF-DEBUG] query de tipos de documento.
+        with timed("ListDocsForReview: query tipos (list_all)"):
+            types_by_id = {dt.id: dt for dt in self._document_type_repo.list_all()}
 
-        # Empleados: activos e inactivos (RETIRADOS también entra a la cola).
-        employees_by_id = {
-            e.id: e
-            for e in (
-                self._employee_repo.list_all(active_only=True)
-                + self._employee_repo.list_all(active_only=False)
-            )
-        }
+        # [PERF-DEBUG] DOS queries: empleados activos + inactivos.
+        with timed("ListDocsForReview: query empleados (activos + inactivos = 2 queries)"):
+            employees_by_id = {
+                e.id: e
+                for e in (
+                    self._employee_repo.list_all(active_only=True)
+                    + self._employee_repo.list_all(active_only=False)
+                )
+            }
 
-        groups_by_id = self._flatten_groups()
+        # [PERF-DEBUG] query de grupos (aplanado del árbol).
+        with timed("ListDocsForReview: query grupos (flatten)"):
+            groups_by_id = self._flatten_groups()
 
-        items: list[DocumentReviewItem] = []
-        for doc in self._document_repo.list_all():
-            dtype = types_by_id.get(doc.document_type_id)
-            if dtype is None:
-                continue  # tipo huérfano: se ignora en la cola
+        # [PERF-DEBUG] paginación de TODOS los documentos (varias queries de 1000).
+        with timed("ListDocsForReview: query documentos (list_all paginado)"):
+            all_docs = self._document_repo.list_all()
+        log(f"ListDocsForReview: {len(all_docs)} documentos, "
+            f"{len(employees_by_id)} empleados, {len(types_by_id)} tipos")
 
-            if data.only_extra and dtype.category != EXTRA_CATEGORY:
-                continue
+        # [PERF-DEBUG] armado de la cola en Python (sin tocar red).
+        with timed(f"ListDocsForReview: armado en Python sobre {len(all_docs)} docs"):
+            items: list[DocumentReviewItem] = []
+            for doc in all_docs:
+                dtype = types_by_id.get(doc.document_type_id)
+                if dtype is None:
+                    continue  # tipo huérfano: se ignora en la cola
 
-            employee = employees_by_id.get(doc.employee_id)
-            if employee is None:
-                continue
+                if data.only_extra and dtype.category != EXTRA_CATEGORY:
+                    continue
 
-            if data.group_id is not None and not self._in_group_subtree(
-                employee.group_id, data.group_id, groups_by_id
-            ):
-                continue
+                employee = employees_by_id.get(doc.employee_id)
+                if employee is None:
+                    continue
 
-            items.append(DocumentReviewItem(
-                document_id=doc.id,
-                employee_id=doc.employee_id,
-                employee_name=employee.name,
-                employee_group_path=self._group_path(employee.group_id, groups_by_id),
-                file_name=doc.file_name,
-                drive_url=doc.drive_url,
-                current_document_type_id=doc.document_type_id,
-                current_document_type_name=dtype.name,
-            ))
+                if data.group_id is not None and not self._in_group_subtree(
+                    employee.group_id, data.group_id, groups_by_id
+                ):
+                    continue
 
-        items.sort(key=lambda it: it.employee_name.upper())
+                items.append(DocumentReviewItem(
+                    document_id=doc.id,
+                    employee_id=doc.employee_id,
+                    employee_name=employee.name,
+                    employee_group_path=self._group_path(employee.group_id, groups_by_id),
+                    file_name=doc.file_name,
+                    drive_url=doc.drive_url,
+                    current_document_type_id=doc.document_type_id,
+                    current_document_type_name=dtype.name,
+                ))
+
+            items.sort(key=lambda it: it.employee_name.upper())
+        log(f"ListDocsForReview: {len(items)} items resultantes")
         return items
 
     # ------------------------------------------------------------------

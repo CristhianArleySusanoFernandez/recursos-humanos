@@ -64,6 +64,8 @@ def _build_service():
     variable de entorno el token renovado NO se persiste (el refresh token sigue
     siendo válido y el access token se regenera en cada arranque sin problema).
     """
+    # [PERF-DEBUG] marca cuándo se AUTENTICA realmente contra Drive (costoso).
+    print("[PERF]   >>> _build_service(): AUTENTICANDO contra Google Drive <<<", flush=True)
     creds, persist_path, source = _load_oauth_credentials()
 
     if not creds.valid:
@@ -100,6 +102,8 @@ class GoogleDriveAdapter(FileStorage):
     """
 
     def __init__(self) -> None:
+        # [PERF-DEBUG] marca cada vez que se INSTANCIA el adaptador (barato, lazy).
+        print("[PERF]   GoogleDriveAdapter() instanciado (aún sin autenticar)", flush=True)
         self._root_folder_id = os.environ.get("GOOGLE_DRIVE_ROOT_FOLDER_ID", "")
         self._service = None  # lazy — se inicializa en _get_service()
 

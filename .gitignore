@@ -21,6 +21,7 @@ upload_response.txt
 migracion_reporte.csv
 reclasificacion_log.csv
 reconciliacion_log.csv
+reconciliacion_retirados_log.csv
 conflictos_reporte.csv
 
 # --- IDE / editores ---
