@@ -77,11 +77,15 @@ def _collect_items(
     only_extra: bool,
     group_id: UUID | None,
     employee_id: UUID | None = None,
+    verified_filter: str | None = None,
+    employee_status: str | None = None,
 ) -> list[dict]:
     items = list_uc.execute(ListDocumentsForReviewInput(
         only_extra=only_extra,
         group_id=group_id,
         employee_id=employee_id,
+        verified_filter=verified_filter,
+        employee_status=employee_status,
     ))
     return [_item_to_dict(it) for it in items]
 
@@ -132,13 +136,15 @@ async def reclassify_page(
     only_extra: bool = False,
     group_id: str | None = None,
     employee_id: str | None = None,
+    verified_filter: str | None = None,
+    employee_status: str | None = None,
     list_uc: ListDocumentsForReview = Depends(get_list_documents_for_review),
     document_type_repo: SupabaseDocumentTypeRepository = Depends(get_document_type_repo),
     groups_uc: ListGroups = Depends(get_list_groups),
 ):
     gid = _parse_uuid(group_id)
     eid = _parse_uuid(employee_id)
-    items = _collect_items(list_uc, only_extra, gid, eid)
+    items = _collect_items(list_uc, only_extra, gid, eid, verified_filter, employee_status)
 
     # Opciones DESTINO del select "Reasignar a": solo tipos activos y SIN los
     # autogenerados de categoría EXTRA (cuyo name es el nombre del archivo), para
@@ -170,11 +176,15 @@ async def reclassify_list(
     only_extra: bool = False,
     group_id: str | None = None,
     employee_id: str | None = None,
+    verified_filter: str | None = None,
+    employee_status: str | None = None,
     list_uc: ListDocumentsForReview = Depends(get_list_documents_for_review),
 ):
     gid = _parse_uuid(group_id)
     eid = _parse_uuid(employee_id)
-    return JSONResponse({"items": _collect_items(list_uc, only_extra, gid, eid)})
+    return JSONResponse({"items": _collect_items(
+        list_uc, only_extra, gid, eid, verified_filter, employee_status
+    )})
 
 
 # ---------------------------------------------------------------------------

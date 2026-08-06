@@ -10,37 +10,8 @@
 {# ── Filtros ──────────────────────────────────────────────────────────── #}
 <div class="card mb-3">
   <div class="card-body">
+    {# Fila 1: búsqueda de empleado (autocompletar) + chip del filtro activo. #}
     <div class="row g-3 align-items-end">
-      <div class="col-md-5">
-        <label class="form-label fw-semibold d-block">Mostrar</label>
-        <div class="btn-group" role="group" aria-label="Filtro de categoría">
-          <input type="radio" class="btn-check" name="filterScope" id="scopeAll"
-                 value="all" {% if not only_extra %}checked{% endif %}>
-          <label class="btn btn-outline-primary btn-sm" for="scopeAll">Todos</label>
-
-          <input type="radio" class="btn-check" name="filterScope" id="scopeExtra"
-                 value="extra" {% if only_extra %}checked{% endif %}>
-          <label class="btn btn-outline-primary btn-sm" for="scopeExtra">Solo EXTRA</label>
-        </div>
-      </div>
-      <div class="col-md-5">
-        <label for="filterZona" class="form-label fw-semibold">Zona</label>
-        <select id="filterZona" class="form-select">
-          <option value="">Todas</option>
-          {% for z in zonas %}
-          <option value="{{ z.id }}" {% if selected_group_id == z.id|string %}selected{% endif %}>
-            {{ z.name }}
-          </option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="col-md-2 text-md-end">
-        <span class="badge bg-secondary fs-6" id="pendingCounter">0 pendientes</span>
-      </div>
-    </div>
-
-    {# ── Filtro por empleado (autocompletar) ─────────────────────────── #}
-    <div class="row g-3 mt-1">
       <div class="col-md-8 position-relative">
         <label for="filterEmployee" class="form-label fw-semibold">Empleado</label>
         <input type="text" id="filterEmployee" class="form-control" autocomplete="off"
@@ -61,8 +32,71 @@
         </span>
       </div>
     </div>
+
+    {# Fila 2: scope, zona, subgrupo, verificación, estado empleado + contador. #}
+    <div class="row g-3 align-items-end mt-1">
+      <div class="col-md-auto">
+        <label class="form-label fw-semibold d-block">Mostrar</label>
+        <div class="btn-group" role="group" aria-label="Filtro de categoría">
+          <input type="radio" class="btn-check" name="filterScope" id="scopeAll"
+                 value="all" {% if not only_extra %}checked{% endif %}>
+          <label class="btn btn-outline-primary btn-sm" for="scopeAll">Todos</label>
+
+          <input type="radio" class="btn-check" name="filterScope" id="scopeExtra"
+                 value="extra" {% if only_extra %}checked{% endif %}>
+          <label class="btn btn-outline-primary btn-sm" for="scopeExtra">Solo EXTRA</label>
+        </div>
+      </div>
+      <div class="col-md">
+        <label for="filterZona" class="form-label fw-semibold">Zona</label>
+        <select id="filterZona" class="form-select form-select-sm">
+          <option value="">Todas</option>
+          {% for z in zonas %}
+          <option value="{{ z.id }}" {% if selected_group_id == z.id|string %}selected{% endif %}>
+            {{ z.name }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md">
+        <label for="filterSubgroup" class="form-label fw-semibold">Subgrupo</label>
+        <select id="filterSubgroup" class="form-select form-select-sm" disabled>
+          <option value="">Todos</option>
+        </select>
+      </div>
+      <div class="col-md">
+        <label for="filterVerified" class="form-label fw-semibold">Verificación</label>
+        <select id="filterVerified" class="form-select form-select-sm">
+          <option value="all">Todos</option>
+          <option value="unverified">Sin verificar</option>
+          <option value="verified">Verificados</option>
+        </select>
+      </div>
+      <div class="col-md">
+        <label for="filterEmpStatus" class="form-label fw-semibold">Empleados</label>
+        <select id="filterEmpStatus" class="form-select form-select-sm">
+          <option value="all">Todos</option>
+          <option value="active">Solo activos</option>
+          <option value="inactive">Solo inactivos</option>
+        </select>
+      </div>
+      <div class="col-md-auto text-md-end">
+        <span class="badge bg-secondary fs-6" id="pendingCounter">0 pendientes</span>
+      </div>
+    </div>
   </div>
 </div>
+
+{# Subgrupos por zona (para encadenar Zona → Subgrupo desde JS). #}
+<script id="subgroupsData" type="application/json">
+{
+  {% for z in zonas %}
+  {{ z.id|string|tojson }}: [
+    {% for c in z.children %}{"id": {{ c.id|string|tojson }}, "name": {{ c.name|tojson }}}{{ "," if not loop.last }}{% endfor %}
+  ]{{ "," if not loop.last }}
+  {% endfor %}
+}
+</script>
 
 {# ── Panel de revisión ────────────────────────────────────────────────── #}
 <div id="reviewPanel" class="card d-none">
@@ -333,27 +367,56 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   });
 
-  // ── Filtro por empleado (autocompletar) ────────────────────────────
+  // ── Filtros (empleado, zona/subgrupo, verificación, estado) ─────────
   var filterZona     = document.getElementById('filterZona');
+  var filterSubgroup = document.getElementById('filterSubgroup');
+  var filterVerified = document.getElementById('filterVerified');
+  var filterEmpStatus = document.getElementById('filterEmpStatus');
   var filterEmployee = document.getElementById('filterEmployee');
   var employeeResults = document.getElementById('employeeResults');
   var employeeChip     = document.getElementById('employeeChip');
   var employeeChipName = document.getElementById('employeeChipName');
 
-  // Filtro de empleado activo (gana sobre la zona). Vacío = sin filtro.
+  // Subgrupos por zona, embebidos por el servidor (para encadenar Zona→Subgrupo).
+  var SUBGROUPS = {};
+  try {
+    SUBGROUPS = JSON.parse(document.getElementById('subgroupsData').textContent || '{}');
+  } catch (e) { SUBGROUPS = {}; }
+
+  // Filtro de empleado activo (gana sobre zona/subgrupo). Vacío = sin filtro.
   var selectedEmployeeId = '';
 
+  // Puebla el select de Subgrupo con los hijos de la zona dada.
+  function populateSubgroups(zoneId) {
+    filterSubgroup.innerHTML = '<option value="">Todos</option>';
+    var kids = SUBGROUPS[zoneId] || [];
+    kids.forEach(function (c) {
+      var opt = document.createElement('option');
+      opt.value = c.id;
+      opt.textContent = c.name;
+      filterSubgroup.appendChild(opt);
+    });
+  }
+
+  // Subgrupo habilitado solo si hay zona elegida y no hay filtro de empleado.
+  function refreshSubgroupState() {
+    filterSubgroup.disabled = !filterZona.value || !!selectedEmployeeId;
+  }
+
   // Refleja en la UI si el filtro por empleado está activo: cuando lo está,
-  // la Zona se ignora y se deshabilita para no confundir cuál manda.
+  // Zona y Subgrupo se ignoran y se deshabilitan para no confundir cuál manda.
   function applyEmployeeFilterUI(active, name) {
     if (active) {
       employeeChipName.textContent = name || '';
       employeeChip.classList.remove('d-none');
       filterZona.value = '';
       filterZona.disabled = true;
+      populateSubgroups('');
+      filterSubgroup.disabled = true;
     } else {
       employeeChip.classList.add('d-none');
       filterZona.disabled = false;
+      refreshSubgroupState();
     }
   }
 
@@ -422,11 +485,19 @@ document.addEventListener('DOMContentLoaded', function () {
     var url = '/reclassify/list?only_extra=' + (onlyExtra ? 'true' : 'false');
 
     if (selectedEmployeeId) {
-      // El filtro por empleado prevalece: se ignora la zona.
+      // El filtro por empleado prevalece: se ignoran zona y subgrupo.
       url += '&employee_id=' + encodeURIComponent(selectedEmployeeId);
     } else {
-      var zona = filterZona.value;
-      if (zona) url += '&group_id=' + encodeURIComponent(zona);
+      // El subgrupo (más específico) prevalece sobre la zona raíz.
+      var gid = filterSubgroup.value || filterZona.value;
+      if (gid) url += '&group_id=' + encodeURIComponent(gid);
+    }
+
+    if (filterVerified.value !== 'all') {
+      url += '&verified_filter=' + encodeURIComponent(filterVerified.value);
+    }
+    if (filterEmpStatus.value !== 'all') {
+      url += '&employee_status=' + encodeURIComponent(filterEmpStatus.value);
     }
 
     fetch(url).then(function (r) { return r.json(); }).then(function (data) {
@@ -440,7 +511,15 @@ document.addEventListener('DOMContentLoaded', function () {
     document.querySelectorAll('input[name="filterScope"]'),
     function (el) { el.addEventListener('change', reloadQueue); }
   );
-  filterZona.addEventListener('change', reloadQueue);
+  filterZona.addEventListener('change', function () {
+    // Al cambiar la zona, repuebla el subgrupo y recarga.
+    populateSubgroups(filterZona.value);
+    refreshSubgroupState();
+    reloadQueue();
+  });
+  filterSubgroup.addEventListener('change', reloadQueue);
+  filterVerified.addEventListener('change', reloadQueue);
+  filterEmpStatus.addEventListener('change', reloadQueue);
 
   // Estado inicial: si la página cargó con employee_id (deep link), activa el
   // chip mostrando el nombre del primer item (todos son del mismo empleado).
@@ -449,6 +528,10 @@ document.addEventListener('DOMContentLoaded', function () {
     selectedEmployeeId = initialEmployeeId;
     var name = (queue[0] && queue[0].employee_name) || 'empleado';
     applyEmployeeFilterUI(true, name);
+  } else if (filterZona.value) {
+    // Zona preseleccionada por el servidor: puebla subgrupos y habilita.
+    populateSubgroups(filterZona.value);
+    refreshSubgroupState();
   }
 
   render();

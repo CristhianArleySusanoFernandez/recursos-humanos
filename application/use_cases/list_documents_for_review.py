@@ -40,10 +40,16 @@ class DocumentReviewItem:
 @dataclass
 class ListDocumentsForReviewInput:
     only_extra: bool = False
+    # group_id acepta tanto una zona raíz como un subgrupo: el filtro por
+    # subárbol (_in_group_subtree) funciona igual en ambos casos.
     group_id: UUID | None = None
     # Filtro por empleado concreto. Es el más específico: si viene, prevalece
     # sobre el filtro de zona (group_id se ignora).
     employee_id: UUID | None = None
+    # Verificación del documento: None/"all" | "unverified" | "verified".
+    verified_filter: str | None = None
+    # Estado del empleado: None/"all" | "active" | "inactive".
+    employee_status: str | None = None
 
 
 class ListDocumentsForReview:
@@ -96,12 +102,24 @@ class ListDocumentsForReview:
                 if data.only_extra and dtype.category != EXTRA_CATEGORY:
                     continue
 
+                # Verificación del documento.
+                if data.verified_filter == "verified" and not doc.verified:
+                    continue
+                if data.verified_filter == "unverified" and doc.verified:
+                    continue
+
                 employee = employees_by_id.get(doc.employee_id)
                 if employee is None:
                     continue
 
+                # Estado del empleado.
+                if data.employee_status == "active" and not employee.is_active:
+                    continue
+                if data.employee_status == "inactive" and employee.is_active:
+                    continue
+
                 # El filtro por empleado es el más específico y prevalece: si
-                # viene employee_id, se ignora el filtro de zona (group_id).
+                # viene employee_id, se ignora el filtro de zona/subgrupo.
                 if data.employee_id is not None:
                     if doc.employee_id != data.employee_id:
                         continue
