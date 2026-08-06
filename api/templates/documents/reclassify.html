@@ -80,6 +80,17 @@
           {% endfor %}
         </select>
 
+        {# Verificación manual — independiente del tipo; no recarga la página. #}
+        <div class="form-check form-switch mb-3" id="verifiedWrap">
+          <input class="form-check-input" type="checkbox" id="verifiedCheck"
+                 style="cursor:pointer;">
+          <label class="form-check-label fw-semibold" for="verifiedCheck"
+                 style="cursor:pointer;">
+            Verificado manualmente
+            <span id="verifiedCheckMark" style="color:#27ae60;display:none;">✓</span>
+          </label>
+        </div>
+
         <div class="d-grid gap-2">
           <button type="button" class="btn btn-dst-primary" id="btnSaveNext">
             Guardar y siguiente
@@ -139,6 +150,9 @@ document.addEventListener('DOMContentLoaded', function () {
   var frame      = document.getElementById('previewFrame');
   var openLink   = document.getElementById('openInDrive');
   var typeSelect = document.getElementById('typeSelect');
+  var verifiedCheck = document.getElementById('verifiedCheck');
+  var verifiedMark  = document.getElementById('verifiedCheckMark');
+  var reviewPanel   = document.getElementById('reviewPanel');
 
   // El modal se instancia de forma perezosa (solo cuando se necesita mostrar),
   // no al cargar la página: así no depende de que bootstrap.bundle ya esté listo
@@ -179,7 +193,40 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Preselecciona el tipo actual en el select, si existe entre las opciones.
     typeSelect.value = item.current_document_type_id;
+
+    // Estado de "verificado": premarca el checkbox y resalta la tarjeta.
+    applyVerifiedUI(!!item.verified);
   }
+
+  // Refleja el estado verificado en el checkbox y el fondo de la tarjeta.
+  function applyVerifiedUI(isVerified) {
+    verifiedCheck.checked = isVerified;
+    verifiedMark.style.display = isVerified ? 'inline' : 'none';
+    // Fondo verde claro distintivo cuando el documento ya fue verificado.
+    reviewPanel.style.backgroundColor = isVerified ? '#eafaf1' : '';
+  }
+
+  // ── Verificado manual ──────────────────────────────────────────────
+  verifiedCheck.addEventListener('change', function () {
+    var item = currentItem();
+    if (!item) return;
+    var newValue = verifiedCheck.checked;
+
+    postForm('/' + item.document_id + '/verify', { verified: newValue })
+      .then(function (res) {
+        if (res.json && res.json.ok) {
+          item.verified = newValue;          // persiste en la cola en memoria
+          applyVerifiedUI(newValue);
+        } else {
+          verifiedCheck.checked = !newValue; // revierte
+          alert((res.json && res.json.error) || 'No se pudo actualizar el verificado.');
+        }
+      })
+      .catch(function () {
+        verifiedCheck.checked = !newValue;
+        alert('Error de red al actualizar el verificado.');
+      });
+  });
 
   function advance() {
     index += 1;

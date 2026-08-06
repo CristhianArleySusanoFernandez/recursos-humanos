@@ -13,8 +13,5 @@ google-auth==2.36.0
 google-auth-httplib2==0.2.0   # requerido por google-api-python-client para el transporte HTTP
 google-auth-oauthlib==1.2.1   # flujo OAuth 2.0 para credenciales de usuario
 
-# --- Clasificación automática (subida masiva) ---
-pymupdf==1.28.0               # rasteriza la 1a página de PDFs a PNG para el modelo de visión
-
 # --- Utilidades ---
 python-dotenv==1.0.1

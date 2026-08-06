@@ -73,6 +73,10 @@ class Employee:
         present = sum(1 for d in self.documents if d.document_type_id in required_ids)
         return present, len(required_ids)
 
+    def verified_count(self) -> int:
+        """Cuántos de los documentos presentes están verificados manualmente."""
+        return sum(1 for d in self.documents if d.verified)
+
     def get_extra_documents(
         self,
         document_types: list[DocumentType],

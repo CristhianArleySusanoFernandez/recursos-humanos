@@ -14,6 +14,10 @@ class Document:
     drive_file_id: str
     drive_url: str
     uploaded_at: datetime
+    # Verificación manual: un humano ya revisó este archivo. Independiente de
+    # N/A y del tipo; no afecta la completitud.
+    verified: bool = False
+    verified_at: datetime | None = None
 
     @classmethod
     def create(

@@ -56,6 +56,7 @@ def _item_to_dict(item: DocumentReviewItem) -> dict:
         "preview_url": _preview_url(item.drive_url),
         "current_document_type_id": str(item.current_document_type_id),
         "current_document_type_name": item.current_document_type_name,
+        "verified": item.verified,
     }
 
 
@@ -98,9 +99,9 @@ async def reclassify_page(
     items = _collect_items(list_uc, only_extra, gid)
 
     # Opciones DESTINO del select "Reasignar a": solo tipos activos y SIN los
-    # autogenerados de categoría EXTRA (cuyo name es el nombre del archivo), igual
-    # que hace OllamaDocumentClassifier para no ensuciar el catálogo. Esto NO
-    # afecta la lista de documentos pendientes (esos sí incluyen los EXTRA).
+    # autogenerados de categoría EXTRA (cuyo name es el nombre del archivo), para
+    # no ensuciar el catálogo. Esto NO afecta la lista de documentos pendientes
+    # (esos sí incluyen los EXTRA).
     document_types = sorted(
         document_type_repo.list_active(exclude_category="EXTRA"),
         key=lambda dt: (dt.category, dt.order_index),

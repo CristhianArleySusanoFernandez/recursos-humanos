@@ -63,8 +63,15 @@
                          style="width:{{ [((doc_count / 25) * 100) | int, 100] | min }}%"
                          role="progressbar"></div>
                   </div>
+                  {% set verified_count = emp.verified_count() %}
                   <span style="font-size:.8rem;color:var(--color-text-muted);">
                     {{ doc_count }} docs
+                    {% if verified_count > 0 %}
+                    · <span style="color:#27ae60;font-weight:600;"
+                            title="{{ verified_count }} de {{ doc_count }} documentos verificados">
+                        ✓ {{ verified_count }} verif.
+                      </span>
+                    {% endif %}
                   </span>
                 </div>
               </td>

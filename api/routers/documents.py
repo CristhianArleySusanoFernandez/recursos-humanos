@@ -4,18 +4,19 @@ from fastapi import APIRouter, Depends, File, Form, UploadFile
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from api.dependencies import (
-    get_bulk_upload,
     get_delete_document,
-    get_document_classifier,
     get_toggle_document_na,
+    get_toggle_document_verified,
     get_upload_document,
 )
-from application.use_cases.bulk_upload import BulkUpload, BulkUploadInput
 from application.use_cases.delete_document import DeleteDocument
 from application.use_cases.toggle_document_na import ToggleDocumentNa, ToggleDocumentNaInput
+from application.use_cases.toggle_document_verified import (
+    ToggleDocumentVerified,
+    ToggleDocumentVerifiedInput,
+)
 from application.use_cases.upload_document import UploadDocument, UploadDocumentInput
 from domain.exceptions import DomainError
-from infrastructure.ollama.document_classifier import OllamaDocumentClassifier
 
 router = APIRouter()
 
@@ -82,63 +83,6 @@ async def upload_document(
 
 
 # ---------------------------------------------------------------------------
-# Estado de Ollama — usado por detail.html al cargar la página
-# ---------------------------------------------------------------------------
-# Nota: la ruta tiene 2 segmentos, por lo que no colisiona con el patrón
-# dinámico /{employee_id} del router de empleados.
-
-
-@router.get("/api/ollama-status")
-async def ollama_status(
-    classifier: OllamaDocumentClassifier = Depends(get_document_classifier),
-):
-    return JSONResponse({"available": classifier.is_available()})
-
-
-# ---------------------------------------------------------------------------
-# Subida masiva con clasificación automática
-# ---------------------------------------------------------------------------
-
-
-@router.post("/{employee_id}/bulk-upload")
-async def bulk_upload_documents(
-    employee_id: UUID,
-    files: list[UploadFile] = File(...),
-    use_case: BulkUpload = Depends(get_bulk_upload),
-):
-    payload: list[tuple[str, bytes, str]] = []
-    for f in files:
-        content = await f.read()
-        payload.append((
-            f.filename or "documento",
-            content,
-            f.content_type or "application/octet-stream",
-        ))
-
-    try:
-        result = use_case.execute(BulkUploadInput(
-            employee_id=employee_id,
-            files=payload,
-        ))
-    except DomainError as exc:
-        return RedirectResponse(
-            url=f"/{employee_id}?error={_url_encode(str(exc))}#subida-masiva",
-            status_code=303,
-        )
-
-    summary = (
-        f"{len(result.clasificados)}_clasificados,"
-        f"{len(result.extras)}_extras,"
-        f"{len(result.errores)}_errores,"
-        f"{len(result.omitidos)}_omitidos"
-    )
-    return RedirectResponse(
-        url=f"/{employee_id}?bulk_result={_url_encode(summary)}#subida-masiva",
-        status_code=303,
-    )
-
-
-# ---------------------------------------------------------------------------
 # Toggle N/A — retorna JSON para fetch()
 # ---------------------------------------------------------------------------
 
@@ -155,6 +99,29 @@ async def toggle_document_na(
             document_type_id=document_type_id,
         ))
         return JSONResponse({"ok": True, "is_na": is_na_now})
+    except DomainError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+
+
+# ---------------------------------------------------------------------------
+# Verificado manual — retorna JSON para fetch() (mismo patrón que N/A)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/{document_id}/verify")
+async def verify_document(
+    document_id: UUID,
+    verified: bool = Form(...),
+    use_case: ToggleDocumentVerified = Depends(get_toggle_document_verified),
+):
+    try:
+        use_case.execute(ToggleDocumentVerifiedInput(
+            document_id=document_id,
+            verified=verified,
+        ))
+        return JSONResponse({"ok": True, "verified": verified})
     except DomainError as exc:
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
     except Exception as exc:

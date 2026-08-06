@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 
 from supabase import Client
@@ -12,6 +12,7 @@ _TABLE = "documents"
 
 
 def _row_to_document(row: dict) -> Document:
+    verified_at_raw = row.get("verified_at")
     return Document(
         id=UUID(row["id"]),
         employee_id=UUID(row["employee_id"]),
@@ -20,6 +21,8 @@ def _row_to_document(row: dict) -> Document:
         drive_file_id=row["drive_file_id"],
         drive_url=row["drive_url"],
         uploaded_at=datetime.fromisoformat(row["uploaded_at"]),
+        verified=bool(row.get("verified", False)),
+        verified_at=datetime.fromisoformat(verified_at_raw) if verified_at_raw else None,
     )
 
 
@@ -151,3 +154,11 @@ class SupabaseDocumentRepository(DocumentRepository):
             .eq("document_type_id", str(document_type_id))
             .execute()
         )
+
+    def mark_verified(self, document_id: UUID, verified: bool) -> None:
+        payload = {
+            "verified": verified,
+            # Sella la hora al verificar; la limpia al desmarcar.
+            "verified_at": datetime.now(timezone.utc).isoformat() if verified else None,
+        }
+        self._db.table(_TABLE).update(payload).eq("id", str(document_id)).execute()

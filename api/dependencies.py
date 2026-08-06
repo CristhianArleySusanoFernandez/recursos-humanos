@@ -8,7 +8,6 @@ Los repositorios de Supabase son ligeros: comparten el cliente singleton interno
 
 from fastapi import Depends
 
-from application.use_cases.bulk_upload import BulkUpload
 from application.use_cases.create_document_type import CreateDocumentType
 from application.use_cases.create_employee import CreateEmployee
 from application.use_cases.deactivate_employee import DeactivateEmployee
@@ -16,6 +15,7 @@ from application.use_cases.create_group import CreateGroup
 from application.use_cases.delete_document import DeleteDocument
 from application.use_cases.delete_employee import DeleteEmployee
 from application.use_cases.toggle_document_na import ToggleDocumentNa
+from application.use_cases.toggle_document_verified import ToggleDocumentVerified
 from application.use_cases.delete_group import DeleteGroup
 from application.use_cases.get_employee_checklist import GetEmployeeChecklist
 from application.use_cases.list_document_types import ListDocumentTypes
@@ -28,7 +28,6 @@ from application.use_cases.update_employee import UpdateEmployee
 from application.use_cases.update_group import UpdateGroup
 from application.use_cases.upload_document import UploadDocument
 from infrastructure.google_drive.drive_adapter import GoogleDriveAdapter
-from infrastructure.ollama.document_classifier import OllamaDocumentClassifier
 from infrastructure.supabase.document_na_repository import SupabaseDocumentNaRepository
 from infrastructure.supabase.document_repository import SupabaseDocumentRepository
 from infrastructure.supabase.document_type_repository import SupabaseDocumentTypeRepository
@@ -42,14 +41,6 @@ from infrastructure.supabase.group_repository import SupabaseGroupRepository
 
 def get_drive_adapter() -> GoogleDriveAdapter:
     return GoogleDriveAdapter()
-
-
-def get_document_classifier() -> OllamaDocumentClassifier:
-    """
-    Clasificador local vía Ollama. No requiere API key.
-    Es ligero de instanciar: solo guarda la URL base y el modelo.
-    """
-    return OllamaDocumentClassifier(SupabaseDocumentTypeRepository())
 
 
 # ---------------------------------------------------------------------------
@@ -143,24 +134,6 @@ def get_upload_document(
     return UploadDocument(employee_repo, document_repo, document_type_repo, file_storage, group_repo)
 
 
-def get_bulk_upload(
-    classifier: OllamaDocumentClassifier = Depends(get_document_classifier),
-    file_storage: GoogleDriveAdapter = Depends(get_drive_adapter),
-    employee_repo: SupabaseEmployeeRepository = Depends(get_employee_repo),
-    document_repo: SupabaseDocumentRepository = Depends(get_document_repo),
-    document_type_repo: SupabaseDocumentTypeRepository = Depends(get_document_type_repo),
-    group_repo: SupabaseGroupRepository = Depends(get_group_repo),
-) -> BulkUpload:
-    return BulkUpload(
-        classifier,
-        file_storage,
-        employee_repo,
-        document_repo,
-        document_type_repo,
-        group_repo,
-    )
-
-
 def get_delete_document(
     document_repo: SupabaseDocumentRepository = Depends(get_document_repo),
     file_storage: GoogleDriveAdapter = Depends(get_drive_adapter),
@@ -172,6 +145,12 @@ def get_toggle_document_na(
     document_na_repo: SupabaseDocumentNaRepository = Depends(get_document_na_repo),
 ) -> ToggleDocumentNa:
     return ToggleDocumentNa(document_na_repo)
+
+
+def get_toggle_document_verified(
+    document_repo: SupabaseDocumentRepository = Depends(get_document_repo),
+) -> ToggleDocumentVerified:
+    return ToggleDocumentVerified(document_repo)
 
 
 def get_reclassify_document(

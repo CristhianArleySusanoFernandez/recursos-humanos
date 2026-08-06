@@ -45,3 +45,11 @@ class DocumentRepository(ABC):
 
     @abstractmethod
     def delete(self, employee_id: UUID, document_type_id: UUID) -> None: ...
+
+    @abstractmethod
+    def mark_verified(self, document_id: UUID, verified: bool) -> None:
+        """
+        Marca o desmarca un documento como verificado manualmente. Cuando
+        verified=True registra la marca de tiempo; cuando False la limpia.
+        """
+        ...

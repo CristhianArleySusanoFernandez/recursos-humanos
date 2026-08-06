@@ -34,6 +34,7 @@ class DocumentReviewItem:
     drive_url: str
     current_document_type_id: UUID
     current_document_type_name: str
+    verified: bool
 
 
 @dataclass
@@ -110,6 +111,7 @@ class ListDocumentsForReview:
                     drive_url=doc.drive_url,
                     current_document_type_id=doc.document_type_id,
                     current_document_type_name=dtype.name,
+                    verified=doc.verified,
                 ))
 
             items.sort(key=lambda it: it.employee_name.upper())
